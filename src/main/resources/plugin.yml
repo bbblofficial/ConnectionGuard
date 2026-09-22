@@ -1,0 +1,58 @@
+name: ConnectionGuard
+version: '${project.version}'
+main: org.vansama.connectionguard.ConnectionGuard
+author: muvixo
+authors: [muvixo]
+description: Unstable Connection / Ping Guard - standalone plugin
+api-version: 1.8
+softdepend: [PlaceholderAPI]
+
+commands:
+  connectionguard:
+    description: ConnectionGuard main command
+    aliases: [cg, conn, pingguard]
+    usage: /cg help
+    permission: connectionguard.use
+
+permissions:
+  connectionguard.*:
+    description: Full access
+    default: op
+    children:
+      connectionguard.use: true
+      connectionguard.admin: true
+      connectionguard.reload: true
+      connectionguard.toggle: true
+      connectionguard.bypass: true
+      connectionguard.check: true
+      connectionguard.creator: true
+      connectionguard.forceping: true
+      connectionguard.set: true
+
+  connectionguard.use:
+    description: Access to /cg help and /cg ping
+    default: true
+  connectionguard.admin:
+    description: Full admin access
+    default: op
+  connectionguard.reload:
+    description: Reload config
+    default: op
+  connectionguard.toggle:
+    description: Enable/disable the checker
+    default: op
+  connectionguard.bypass:
+    description: Bypass the connection check
+    default: false
+  connectionguard.check:
+    description: Check your own / other players ping
+    default: true
+  connectionguard.creator:
+    description: See plugin credits
+    default: true
+  connectionguard.forceping:
+    description: Force a ping value on a player
+    default: op
+  connectionguard.set:
+    description: Change plugin settings from command
+    default: op

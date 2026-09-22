@@ -1,0 +1,102 @@
+# ============================================================
+#  ConnectionGuard  -  by muvixo
+#  Unstable Connection / Ping Guard
+# ============================================================
+
+# Master switch
+enabled: true
+
+# ============================================================
+#  PING
+# ============================================================
+# If a player's ping is >= ping (ms) for `grace-seconds`,
+# they will be kicked.
+ping: 150
+
+# How often to check (in ticks; 20 ticks = 1 second)
+check-interval: 20
+
+# How long a player is allowed to stay above the threshold
+# before being kicked (in seconds)
+grace-seconds: 30
+
+# Minimum time between warning messages (in seconds)
+warn-cooldown: 5
+
+# ============================================================
+#  MESSAGES
+# ============================================================
+messages:
+  prefix: "&8[&cCG&8] &r"
+  kicked: "&cUnstable connection\n&fYour ping is too high: &e%ping%ms&7/&e%max%ms"
+  broadcast: "&c%player% &7was kicked for &eUnstable Connection &7(&c%ping%ms&7)"
+  warn-title: "&c&lUnstable Connection"
+  warn-subtitle: "&7Ping: &e%ping%ms &7| Kick in &e%seconds%s"
+  stable-again: "&aYour connection is stable again."
+  no-permission: "&cYou do not have permission."
+  reloaded: "&aConfiguration reloaded."
+  enabled-msg: "&aConnection check &lENABLED&a."
+  disabled-msg: "&cConnection check &lDISABLED&c."
+  bypass-added: "&a%player% is now bypassing connection check."
+  bypass-removed: "&a%player% is no longer bypassing."
+  forced-ping-set: "&aForced ping for &e%player% &aset to &e%ping%ms&a."
+  forced-ping-cleared: "&aForced ping removed for &e%player%&a."
+  player-not-found: "&cPlayer not found: &e%player%"
+  ping-self: "&7Your ping: &e%ping%ms"
+  ping-other: "&7%player%'s ping: &e%ping%ms"
+  ping-set: "&aPing threshold set to &e%ping%ms&a."
+  grace-set: "&aGrace period set to &e%seconds%s&a."
+  interval-set: "&aCheck interval set to &e%ticks% ticks&a."
+  usage: "&cUsage: &e%usage%"
+
+# ============================================================
+#  KICK
+# ============================================================
+kick:
+  title-enabled: true
+  title: "&c&lUNSTABLE CONNECTION"
+  subtitle: "&7Ping: &e%ping%ms &7/ &e%max%ms"
+  sound-enabled: true
+  sound: "NOTE_BASS"
+
+# ============================================================
+#  WARNINGS
+# ============================================================
+warnings:
+  title-enabled: true
+  chat-enabled: true
+  sound-enabled: true
+  sound: "NOTE_BASS"
+
+  countdown:
+    chat-enabled: true
+    sound-enabled: true
+    sound: "CLICK"
+    cooldown-seconds: 5
+
+# ============================================================
+#  BYPASS
+# ============================================================
+bypass:
+  permission: "connectionguard.bypass"
+  legacy-permission: "buildffa.connection.bypass"
+  players: []
+
+# ============================================================
+#  WHITELIST
+# ============================================================
+whitelist:
+  enabled: false
+  players: []
+
+# ============================================================
+#  ADVANCED
+# ============================================================
+advanced:
+  tps-guard:
+    enabled: true
+    min-tps: 15.0
+  log-kicks: true
+  broadcast-kicks: true
+  ignore-creative: true
+  debug: false

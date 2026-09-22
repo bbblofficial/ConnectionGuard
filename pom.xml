@@ -16,31 +16,75 @@
     <properties>
         <java.version>1.8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
+    <!-- ============================================================ -->
+    <!--  REPOSITORIES                                                -->
+    <!-- ============================================================ -->
     <repositories>
+        <!-- CodeMC — serves bungeecord-chat 1.8-SNAPSHOT (required!) -->
+        <repository>
+            <id>codemc-repo</id>
+            <url>https://repo.codemc.io/repository/maven-public/</url>
+        </repository>
+
+        <!-- Spigot snapshots — serves spigot-api 1.8.8 -->
         <repository>
             <id>spigotmc-repo</id>
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
         </repository>
+
+        <!-- Sonatype — fallback for common deps -->
         <repository>
             <id>sonatype</id>
             <url>https://oss.sonatype.org/content/groups/public/</url>
         </repository>
+
+        <!-- PlaceholderAPI -->
         <repository>
             <id>placeholderapi</id>
             <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
         </repository>
     </repositories>
 
+    <!-- ============================================================ -->
+    <!--  DEPENDENCIES                                                -->
+    <!-- ============================================================ -->
     <dependencies>
+        <!-- ========================================================== -->
+        <!--  Spigot API 1.8.8                                           -->
+        <!--  We exclude bungeecord-chat (Maven can't find it as a       -->
+        <!--  transitive dep) and re-declare it below from CodeMC.       -->
+        <!-- ========================================================== -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
             <version>1.8.8-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.md-5</groupId>
+                    <artifactId>bungeecord-chat</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
+        <!-- ========================================================== -->
+        <!--  BungeeCord Chat 1.8-SNAPSHOT                               -->
+        <!--  Required by spigot-api. Served by CodeMC.                  -->
+        <!-- ========================================================== -->
+        <dependency>
+            <groupId>net.md-5</groupId>
+            <artifactId>bungeecord-chat</artifactId>
+            <version>1.8-SNAPSHOT</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ========================================================== -->
+        <!--  PlaceholderAPI (optional)                                  -->
+        <!-- ========================================================== -->
         <dependency>
             <groupId>me.clip</groupId>
             <artifactId>placeholderapi</artifactId>
@@ -50,8 +94,12 @@
         </dependency>
     </dependencies>
 
+    <!-- ============================================================ -->
+    <!--  BUILD                                                       -->
+    <!-- ============================================================ -->
     <build>
         <finalName>${project.artifactId}-${project.version}</finalName>
+
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
@@ -71,6 +119,18 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <addMavenDescriptor>false</addMavenDescriptor>
+                    </archive>
                 </configuration>
             </plugin>
         </plugins>

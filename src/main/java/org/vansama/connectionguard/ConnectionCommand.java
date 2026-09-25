@@ -37,7 +37,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- CREATOR ----------
         if (sub.equals("creator") || sub.equals("author")) {
-            if (!sender.hasPermission("connectionguard.creator")) {
+            if (!sender.hasPermission(getPerm("creator", "connectionguard.creator"))) {
                 noPerm(sender); return true;
             }
             sender.sendMessage(colorize("&8&m----------------------------------"));
@@ -52,7 +52,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- STATUS ----------
         if (sub.equals("status") || sub.equals("info")) {
-            if (!sender.hasPermission("connectionguard.admin")) {
+            if (!sender.hasPermission(getPerm("admin", "connectionguard.admin"))) {
                 noPerm(sender); return true;
             }
             sender.sendMessage(colorize("&8&m----------------------------------"));
@@ -68,19 +68,19 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- ON / OFF / TOGGLE ----------
         if (sub.equals("on")) {
-            if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("toggle", "connectionguard.toggle"))) { noPerm(sender); return true; }
             connection.setEnabled(true);
             sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgEnabled()));
             return true;
         }
         if (sub.equals("off")) {
-            if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("toggle", "connectionguard.toggle"))) { noPerm(sender); return true; }
             connection.setEnabled(false);
             sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgDisabled()));
             return true;
         }
         if (sub.equals("toggle")) {
-            if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("toggle", "connectionguard.toggle"))) { noPerm(sender); return true; }
             boolean state = !connection.isEnabled();
             connection.setEnabled(state);
             sender.sendMessage(colorize(connection.getPrefix()
@@ -90,7 +90,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- RELOAD ----------
         if (sub.equals("reload")) {
-            if (!sender.hasPermission("connectionguard.reload")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("reload", "connectionguard.reload"))) { noPerm(sender); return true; }
             plugin.reload();
             sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgReloaded()));
             return true;
@@ -98,7 +98,10 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- PING ----------
         if (sub.equals("ping")) {
-            if (!sender.hasPermission("connectionguard.check")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("check", "connectionguard.check"))
+                    && !sender.hasPermission(getPerm("use", "connectionguard.use"))) {
+                noPerm(sender); return true;
+            }
 
             if (args.length < 2) {
                 if (!(sender instanceof Player)) {
@@ -128,7 +131,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- SET ----------
         if (sub.equals("set")) {
-            if (!sender.hasPermission("connectionguard.set")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("set", "connectionguard.set"))) { noPerm(sender); return true; }
             if (args.length < 3) {
                 sender.sendMessage(colorize(connection.getPrefix()
                         + connection.getMsgUsage().replace("%usage%", "/cg set <ping|grace|interval> <value>")));
@@ -164,7 +167,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- BYPASS ----------
         if (sub.equals("bypass")) {
-            if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("admin", "connectionguard.admin"))) { noPerm(sender); return true; }
             if (args.length < 2) {
                 sender.sendMessage(colorize(connection.getPrefix()
                         + connection.getMsgUsage().replace("%usage%", "/cg bypass <player>")));
@@ -183,7 +186,7 @@ public class ConnectionCommand implements CommandExecutor {
         }
 
         if (sub.equals("unbypass")) {
-            if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("admin", "connectionguard.admin"))) { noPerm(sender); return true; }
             if (args.length < 2) {
                 sender.sendMessage(colorize(connection.getPrefix()
                         + connection.getMsgUsage().replace("%usage%", "/cg unbypass <player>")));
@@ -203,7 +206,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- LIST ----------
         if (sub.equals("list")) {
-            if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("admin", "connectionguard.admin"))) { noPerm(sender); return true; }
             sender.sendMessage(colorize("&8&m----------------------------------"));
             sender.sendMessage(colorize("&6&lBypassed Players"));
             if (connection.getBypassPlayers().isEmpty()) {
@@ -221,7 +224,7 @@ public class ConnectionCommand implements CommandExecutor {
 
         // ---------- FORCEPING ----------
         if (sub.equals("forceping")) {
-            if (!sender.hasPermission("connectionguard.forceping")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("forceping", "connectionguard.forceping"))) { noPerm(sender); return true; }
             if (args.length < 3) {
                 sender.sendMessage(colorize(connection.getPrefix()
                         + connection.getMsgUsage().replace("%usage%", "/cg forceping <player> <ms>")));
@@ -259,7 +262,7 @@ public class ConnectionCommand implements CommandExecutor {
         }
 
         if (sub.equals("clearping")) {
-            if (!sender.hasPermission("connectionguard.forceping")) { noPerm(sender); return true; }
+            if (!sender.hasPermission(getPerm("forceping", "connectionguard.forceping"))) { noPerm(sender); return true; }
             if (args.length < 2) {
                 sender.sendMessage(colorize(connection.getPrefix()
                         + connection.getMsgUsage().replace("%usage%", "/cg clearping <player>")));
@@ -283,41 +286,113 @@ public class ConnectionCommand implements CommandExecutor {
         return true;
     }
 
+    // ============================================================
+    //  PERMISSION HELPER
+    //  Reads "permissions.<action>" from config.yml; falls back
+    //  to the provided default if not set or empty.
+    // ============================================================
+    private String getPerm(String action, String defaultPerm) {
+        String path = "permissions." + action;
+        String value = plugin.getConfig().getString(path);
+        if (value == null || value.trim().isEmpty()) {
+            return defaultPerm;
+        }
+        return value.trim();
+    }
+
     private void noPerm(CommandSender sender) {
         sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgNoPerm()));
     }
 
+    // ============================================================
+    //  HELP MENU
+    //  - General commands: always shown (permission-checked
+    //    individually where applicable).
+    //  - Admin section: only shown if the sender has at least
+    //    one admin permission; each command is then checked
+    //    individually.
+    // ============================================================
     private void sendHelp(CommandSender sender) {
+
+        // Load all permission nodes from config.yml
+        String permUse       = getPerm("use",       "connectionguard.use");
+        String permCreator   = getPerm("creator",   "connectionguard.creator");
+        String permCheck     = getPerm("check",     "connectionguard.check");
+        String permAdmin     = getPerm("admin",     "connectionguard.admin");
+        String permToggle    = getPerm("toggle",    "connectionguard.toggle");
+        String permReload    = getPerm("reload",    "connectionguard.reload");
+        String permSet       = getPerm("set",       "connectionguard.set");
+        String permForcePing = getPerm("forceping", "connectionguard.forceping");
+
+        // isAdmin = OR of all admin-level permissions
+        boolean isAdmin =
+                sender.hasPermission(permAdmin)
+             || sender.hasPermission(permToggle)
+             || sender.hasPermission(permReload)
+             || sender.hasPermission(permSet)
+             || sender.hasPermission(permForcePing);
+
+        // ---------------- HEADER ----------------
         sender.sendMessage(colorize("&8&m----------------------------------"));
         sender.sendMessage(colorize("&6&lConnectionGuard &7- Commands"));
         sender.sendMessage(colorize("&8&m----------------------------------"));
 
-        sender.sendMessage(colorize("&e/cg help &7- Show this help"));
-        sender.sendMessage(colorize("&e/cg creator &7- Show plugin credits"));
-        sender.sendMessage(colorize("&e/cg ping [player] &7- Show ping"));
+        // ---------------- GENERAL COMMANDS ----------------
+        sender.sendMessage(colorize("&e&lGeneral Commands"));
 
-        if (sender.hasPermission("connectionguard.toggle")) {
-            sender.sendMessage(colorize("&e/cg on|off|toggle &7- Toggle the checker"));
-        }
-        if (sender.hasPermission("connectionguard.admin")) {
-            sender.sendMessage(colorize("&e/cg status &7- Show plugin status"));
-            sender.sendMessage(colorize("&e/cg bypass <player> &7- Add bypass"));
-            sender.sendMessage(colorize("&e/cg unbypass <player> &7- Remove bypass"));
-            sender.sendMessage(colorize("&e/cg list &7- List bypassed players"));
-        }
-        if (sender.hasPermission("connectionguard.forceping")) {
-            sender.sendMessage(colorize("&e/cg forceping <player> <ms> &7- Force a ping"));
-            sender.sendMessage(colorize("&e/cg clearping <player> &7- Remove forced ping"));
-        }
-        if (sender.hasPermission("connectionguard.set")) {
-            sender.sendMessage(colorize("&e/cg set ping <ms> &7- Change ping threshold"));
-            sender.sendMessage(colorize("&e/cg set grace <sec> &7- Change grace period"));
-            sender.sendMessage(colorize("&e/cg set interval <ticks> &7- Change check interval"));
-        }
-        if (sender.hasPermission("connectionguard.reload")) {
-            sender.sendMessage(colorize("&e/cg reload &7- Reload configuration"));
+        // /cg help — always visible (this is the help command itself)
+        sender.sendMessage(colorize("  &6/cg help &8- &7Show this help"));
+
+        // /cg creator — permission-checked
+        if (sender.hasPermission(permCreator)) {
+            sender.sendMessage(colorize("  &6/cg creator &8- &7Show plugin credits"));
         }
 
+        // /cg ping — permission-checked (either "check" or "use" grants access)
+        if (sender.hasPermission(permCheck) || sender.hasPermission(permUse)) {
+            sender.sendMessage(colorize("  &6/cg ping [player] &8- &7Show ping"));
+        }
+
+        // ---------------- ADMIN COMMANDS ----------------
+        if (isAdmin) {
+            sender.sendMessage(colorize("&8&m----------------------------------"));
+            sender.sendMessage(colorize("&c&lAdmin Commands"));
+
+            // toggle group
+            if (sender.hasPermission(permToggle)) {
+                sender.sendMessage(colorize("  &6/cg on|off|toggle &8- &7Toggle the checker"));
+            }
+
+            // admin group (status, bypass, unbypass, list)
+            if (sender.hasPermission(permAdmin)) {
+                sender.sendMessage(colorize("  &6/cg status &8- &7Show plugin status"));
+                sender.sendMessage(colorize("  &6/cg bypass <player> &8- &7Add bypass"));
+                sender.sendMessage(colorize("  &6/cg unbypass <player> &8- &7Remove bypass"));
+                sender.sendMessage(colorize("  &6/cg list &8- &7List bypassed players"));
+            }
+
+            // forceping group
+            if (sender.hasPermission(permForcePing)) {
+                sender.sendMessage(colorize("  &6/cg forceping <player> <ms> &8- &7Force a ping"));
+                sender.sendMessage(colorize("  &6/cg clearping <player> &8- &7Remove forced ping"));
+            }
+
+            // set group
+            if (sender.hasPermission(permSet)) {
+                sender.sendMessage(colorize("  &6/cg set ping <ms> &8- &7Change ping threshold"));
+                sender.sendMessage(colorize("  &6/cg set grace <sec> &8- &7Change grace period"));
+                sender.sendMessage(colorize("  &6/cg set interval <ticks> &8- &7Change check interval"));
+            }
+
+            // reload
+            if (sender.hasPermission(permReload)) {
+                sender.sendMessage(colorize("  &6/cg reload &8- &7Reload configuration"));
+            }
+        }
+
+        // ---------------- FOOTER ----------------
+        sender.sendMessage(colorize("&8&m----------------------------------"));
+        sender.sendMessage(colorize("&7Use &e/cg help <command> &7for more info."));
         sender.sendMessage(colorize("&8&m----------------------------------"));
     }
 

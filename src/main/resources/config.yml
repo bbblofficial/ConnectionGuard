@@ -1,56 +1,71 @@
 # ============================================================
-#  ConnectionGuard  -  by muvixo
+#  ConnectionGuard - Configuration
 #  Unstable Connection / Ping Guard
+#  Author: muvixo
 # ============================================================
 
-# Master switch
+# Master switch: enable or disable the connection checker
 enabled: true
 
-# ============================================================
-#  PING
-# ============================================================
-# If a player's ping is >= ping (ms) for `grace-seconds`,
-# they will be kicked.
+# Ping threshold in milliseconds.
+# Players whose ping stays at or above this value will be warned,
+# then kicked after the grace period.
 ping: 150
 
-# How often to check (in ticks; 20 ticks = 1 second)
-check-interval: 20
-
-# How long a player is allowed to stay above the threshold
-# before being kicked (in seconds)
+# Grace period in seconds.
+# How long a player may stay above the ping threshold before being kicked.
 grace-seconds: 30
 
-# Minimum time between warning messages (in seconds)
+# How often the checker runs, in ticks (20 ticks = 1 second).
+check-interval: 20
+
+# Minimum time between warning messages sent to the same player (seconds).
+# Prevents chat spam when a player's ping is unstable.
 warn-cooldown: 5
 
 # ============================================================
-#  MESSAGES
+#  Messages
+#  Color codes use the '&' character.
+#  Placeholders:
+#    %ping%     - player's current ping
+#    %max%      - configured ping threshold
+#    %seconds%  - remaining seconds before kick
+#    %player%   - player's name
+#    %usage%    - usage string for a command
 # ============================================================
 messages:
   prefix: "&8[&cCG&8] &r"
+
   kicked: "&cUnstable connection\n&fYour ping is too high: &e%ping%ms&7/&e%max%ms"
   broadcast: "&c%player% &7was kicked for &eUnstable Connection &7(&c%ping%ms&7)"
+
   warn-title: "&c&lUnstable Connection"
   warn-subtitle: "&7Ping: &e%ping%ms &7| Kick in &e%seconds%s"
   stable-again: "&aYour connection is stable again."
+
   no-permission: "&cYou do not have permission."
   reloaded: "&aConfiguration reloaded."
   enabled-msg: "&aConnection check &lENABLED&a."
   disabled-msg: "&cConnection check &lDISABLED&c."
+
   bypass-added: "&a%player% is now bypassing connection check."
   bypass-removed: "&a%player% is no longer bypassing."
+
   forced-ping-set: "&aForced ping for &e%player% &aset to &e%ping%ms&a."
   forced-ping-cleared: "&aForced ping removed for &e%player%&a."
+
   player-not-found: "&cPlayer not found: &e%player%"
   ping-self: "&7Your ping: &e%ping%ms"
   ping-other: "&7%player%'s ping: &e%ping%ms"
+
   ping-set: "&aPing threshold set to &e%ping%ms&a."
   grace-set: "&aGrace period set to &e%seconds%s&a."
   interval-set: "&aCheck interval set to &e%ticks% ticks&a."
+
   usage: "&cUsage: &e%usage%"
 
 # ============================================================
-#  KICK
+#  Kick screen (title + sound shown when a player is kicked)
 # ============================================================
 kick:
   title-enabled: true
@@ -60,7 +75,7 @@ kick:
   sound: "NOTE_BASS"
 
 # ============================================================
-#  WARNINGS
+#  Warnings (shown when ping first goes above threshold)
 # ============================================================
 warnings:
   title-enabled: true
@@ -68,6 +83,7 @@ warnings:
   sound-enabled: true
   sound: "NOTE_BASS"
 
+  # Countdown messages while waiting out the grace period
   countdown:
     chat-enabled: true
     sound-enabled: true
@@ -75,28 +91,59 @@ warnings:
     cooldown-seconds: 5
 
 # ============================================================
-#  BYPASS
+#  Bypass
+#  Players who should never be checked.
 # ============================================================
 bypass:
   permission: "connectionguard.bypass"
   legacy-permission: "buildffa.connection.bypass"
-  players: []
+  players:
+    - "muvixo"
 
 # ============================================================
-#  WHITELIST
+#  Whitelist mode
+#  When enabled, ONLY players listed below are checked.
+#  Everyone else is ignored.
 # ============================================================
 whitelist:
   enabled: false
-  players: []
+  players:
+    - "example_player"
 
 # ============================================================
-#  ADVANCED
+#  Advanced options
 # ============================================================
 advanced:
+  # Skip checks during server lag spikes (TPS drops)
   tps-guard:
     enabled: true
     min-tps: 15.0
+
+  # Log every kick to the server console
   log-kicks: true
+
+  # Broadcast kick messages to all players
   broadcast-kicks: true
+
+  # Ignore players in Creative / Spectator mode
   ignore-creative: true
+
+  # Verbose debug logging
   debug: false
+
+# ============================================================
+#  Permission Nodes
+#  These are read by /cg help to decide which commands to show.
+#  You can override any node here (useful for permission plugins
+#  that use a different naming scheme).
+# ============================================================
+permissions:
+  use:       "connectionguard.use"
+  creator:   "connectionguard.creator"
+  check:     "connectionguard.check"
+  admin:     "connectionguard.admin"
+  toggle:    "connectionguard.toggle"
+  reload:    "connectionguard.reload"
+  set:       "connectionguard.set"
+  forceping: "connectionguard.forceping"
+  bypass:    "connectionguard.bypass"

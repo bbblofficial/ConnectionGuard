@@ -1,0 +1,2582 @@
+C:\Users\nasle javan\Downloads\r48jd4j98r498ej-main\r48jd4j98r498ej-main\connectiong\ConnectionGuard/
+
+├── .git
+│   ├── COMMIT_EDITMSG
+  Fix: use CodeMC repo for bungeecord-chat 1.8-SNAPSHOT
+│   ├── HEAD
+  ref: refs/heads/main
+│   ├── config
+  [core]
+  	repositoryformatversion = 0
+  	filemode = false
+  	bare = false
+  	logallrefupdates = true
+  	symlinks = false
+  	ignorecase = true
+  [remote "origin"]
+  	url = https://github.com/bbblofficial/ConnectionGuard
+  	fetch = +refs/heads/*:refs/remotes/origin/*
+  [branch "main"]
+  	remote = origin
+  	merge = refs/heads/main
+│   ├── description
+  Unnamed repository; edit this file 'description' to name the repository.
+│   ├── hooks
+│   │   ├── applypatch-msg.sample
+  #!/bin/sh
+  #
+  # An example hook script to check the commit log message taken by
+  # applypatch from an e-mail message.
+  #
+  # The hook should exit with non-zero status after issuing an
+  # appropriate message if it wants to stop the commit.  The hook is
+  # allowed to edit the commit message file.
+  #
+  # To enable this hook, rename this file to "applypatch-msg".
+  
+  . git-sh-setup
+  commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
+  test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
+  :
+│   │   ├── commit-msg.sample
+  #!/bin/sh
+  #
+  # An example hook script to check the commit log message.
+  # Called by "git commit" with one argument, the name of the file
+  # that has the commit message.  The hook should exit with non-zero
+  # status after issuing an appropriate message if it wants to stop the
+  # commit.  The hook is allowed to edit the commit message file.
+  #
+  # To enable this hook, rename this file to "commit-msg".
+  
+  # Uncomment the below to add a Signed-off-by line to the message.
+  # Doing this in a hook is a bad idea in general, but the prepare-commit-msg
+  # hook is more suited to it.
+  #
+  # SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+  # grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
+  
+  # This example catches duplicate Signed-off-by lines.
+  
+  test "" = "$(grep '^Signed-off-by: ' "$1" |
+  	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
+  	echo >&2 Duplicate Signed-off-by lines.
+  	exit 1
+  }
+│   │   ├── fsmonitor-watchman.sample
+  #!/usr/bin/perl
+  
+  use strict;
+  use warnings;
+  use IPC::Open2;
+  
+  # An example hook script to integrate Watchman
+  # (https://facebook.github.io/watchman/) with git to speed up detecting
+  # new and modified files.
+  #
+  # The hook is passed a version (currently 2) and last update token
+  # formatted as a string and outputs to stdout a new update token and
+  # all files that have been modified since the update token. Paths must
+  # be relative to the root of the working tree and separated by a single NUL.
+  #
+  # To enable this hook, rename this file to "query-watchman" and set
+  # 'git config core.fsmonitor .git/hooks/query-watchman'
+  #
+  my ($version, $last_update_token) = @ARGV;
+  
+  # Uncomment for debugging
+  # print STDERR "$0 $version $last_update_token\n";
+  
+  # Check the hook interface version
+  if ($version ne 2) {
+  	die "Unsupported query-fsmonitor hook version '$version'.\n" .
+  	    "Falling back to scanning...\n";
+  }
+  
+  my $git_work_tree = get_working_dir();
+  
+  my $retry = 1;
+  
+  my $json_pkg;
+  eval {
+  	require JSON::XS;
+  	$json_pkg = "JSON::XS";
+  	1;
+  } or do {
+  	require JSON::PP;
+  	$json_pkg = "JSON::PP";
+  };
+  
+  launch_watchman();
+  
+  sub launch_watchman {
+  	my $o = watchman_query();
+  	if (is_work_tree_watched($o)) {
+  		output_result($o->{clock}, @{$o->{files}});
+  	}
+  }
+  
+  sub output_result {
+  	my ($clockid, @files) = @_;
+  
+  	# Uncomment for debugging watchman output
+  	# open (my $fh, ">", ".git/watchman-output.out");
+  	# binmode $fh, ":utf8";
+  	# print $fh "$clockid\n@files\n";
+  	# close $fh;
+  
+  	binmode STDOUT, ":utf8";
+  	print $clockid;
+  	print "\0";
+  	local $, = "\0";
+  	print @files;
+  }
+  
+  sub watchman_clock {
+  	my $response = qx/watchman clock "$git_work_tree"/;
+  	die "Failed to get clock id on '$git_work_tree'.\n" .
+  		"Falling back to scanning...\n" if $? != 0;
+  
+  	return $json_pkg->new->utf8->decode($response);
+  }
+  
+  sub watchman_query {
+  	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
+  	or die "open2() failed: $!\n" .
+  	"Falling back to scanning...\n";
+  
+  	# In the query expression below we're asking for names of files that
+  	# changed since $last_update_token but not from the .git folder.
+  	#
+  	# To accomplish this, we're using the "since" generator to use the
+  	# recency index to select candidate nodes and "fields" to limit the
+  	# output to file names only. Then we're using the "expression" term to
+  	# further constrain the results.
+  	my $last_update_line = "";
+  	if (substr($last_update_token, 0, 1) eq "c") {
+  		$last_update_token = "\"$last_update_token\"";
+  		$last_update_line = qq[\n"since": $last_update_token,];
+  	}
+  	my $query = <<"	END";
+  		["query", "$git_work_tree", {$last_update_line
+  			"fields": ["name"],
+  			"expression": ["not", ["dirname", ".git"]]
+  		}]
+  	END
+  
+  	# Uncomment for debugging the watchman query
+  	# open (my $fh, ">", ".git/watchman-query.json");
+  	# print $fh $query;
+  	# close $fh;
+  
+  	print CHLD_IN $query;
+  	close CHLD_IN;
+  	my $response = do {local $/; <CHLD_OUT>};
+  
+  	# Uncomment for debugging the watch response
+  	# open ($fh, ">", ".git/watchman-response.json");
+  	# print $fh $response;
+  	# close $fh;
+  
+  	die "Watchman: command returned no output.\n" .
+  	"Falling back to scanning...\n" if $response eq "";
+  	die "Watchman: command returned invalid output: $response\n" .
+  	"Falling back to scanning...\n" unless $response =~ /^\{/;
+  
+  	return $json_pkg->new->utf8->decode($response);
+  }
+  
+  sub is_work_tree_watched {
+  	my ($output) = @_;
+  	my $error = $output->{error};
+  	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
+  		$retry--;
+  		my $response = qx/watchman watch "$git_work_tree"/;
+  		die "Failed to make watchman watch '$git_work_tree'.\n" .
+  		    "Falling back to scanning...\n" if $? != 0;
+  		$output = $json_pkg->new->utf8->decode($response);
+  		$error = $output->{error};
+  		die "Watchman: $error.\n" .
+  		"Falling back to scanning...\n" if $error;
+  
+  		# Uncomment for debugging watchman output
+  		# open (my $fh, ">", ".git/watchman-output.out");
+  		# close $fh;
+  
+  		# Watchman will always return all files on the first query so
+  		# return the fast "everything is dirty" flag to git and do the
+  		# Watchman query just to get it over with now so we won't pay
+  		# the cost in git to look up each individual file.
+  		my $o = watchman_clock();
+  		$error = $output->{error};
+  
+  		die "Watchman: $error.\n" .
+  		"Falling back to scanning...\n" if $error;
+  
+  		output_result($o->{clock}, ("/"));
+  		$last_update_token = $o->{clock};
+  
+  		eval { launch_watchman() };
+  		return 0;
+  	}
+  
+  	die "Watchman: $error.\n" .
+  	"Falling back to scanning...\n" if $error;
+  
+  	return 1;
+  }
+  
+  sub get_working_dir {
+  	my $working_dir;
+  	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
+  		$working_dir = Win32::GetCwd();
+  		$working_dir =~ tr/\\/\//;
+  	} else {
+  		require Cwd;
+  		$working_dir = Cwd::cwd();
+  	}
+  
+  	return $working_dir;
+  }
+│   │   ├── post-update.sample
+  #!/bin/sh
+  #
+  # An example hook script to prepare a packed repository for use over
+  # dumb transports.
+  #
+  # To enable this hook, rename this file to "post-update".
+  
+  exec git update-server-info
+│   │   ├── pre-applypatch.sample
+  #!/bin/sh
+  #
+  # An example hook script to verify what is about to be committed
+  # by applypatch from an e-mail message.
+  #
+  # The hook should exit with non-zero status after issuing an
+  # appropriate message if it wants to stop the commit.
+  #
+  # To enable this hook, rename this file to "pre-applypatch".
+  
+  . git-sh-setup
+  precommit="$(git rev-parse --git-path hooks/pre-commit)"
+  test -x "$precommit" && exec "$precommit" ${1+"$@"}
+  :
+│   │   ├── pre-commit.sample
+  #!/bin/sh
+  #
+  # An example hook script to verify what is about to be committed.
+  # Called by "git commit" with no arguments.  The hook should
+  # exit with non-zero status after issuing an appropriate message if
+  # it wants to stop the commit.
+  #
+  # To enable this hook, rename this file to "pre-commit".
+  
+  if git rev-parse --verify HEAD >/dev/null 2>&1
+  then
+  	against=HEAD
+  else
+  	# Initial commit: diff against an empty tree object
+  	against=$(git hash-object -t tree /dev/null)
+  fi
+  
+  # If you want to allow non-ASCII filenames set this variable to true.
+  allownonascii=$(git config --type=bool hooks.allownonascii)
+  
+  # Redirect output to stderr.
+  exec 1>&2
+  
+  # Cross platform projects tend to avoid non-ASCII filenames; prevent
+  # them from being added to the repository. We exploit the fact that the
+  # printable range starts at the space character and ends with tilde.
+  if [ "$allownonascii" != "true" ] &&
+  	# Note that the use of brackets around a tr range is ok here, (it's
+  	# even required, for portability to Solaris 10's /usr/bin/tr), since
+  	# the square bracket bytes happen to fall in the designated range.
+  	test $(git diff-index --cached --name-only --diff-filter=A -z $against |
+  	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
+  then
+  	cat <<\EOF
+  Error: Attempt to add a non-ASCII file name.
+  
+  This can cause problems if you want to work with people on other platforms.
+  
+  To be portable it is advisable to rename the file.
+  
+  If you know what you are doing you can disable this check using:
+  
+    git config hooks.allownonascii true
+  EOF
+  	exit 1
+  fi
+  
+  # If there are whitespace errors, print the offending file names and fail.
+  exec git diff-index --check --cached $against --
+│   │   ├── pre-merge-commit.sample
+  #!/bin/sh
+  #
+  # An example hook script to verify what is about to be committed.
+  # Called by "git merge" with no arguments.  The hook should
+  # exit with non-zero status after issuing an appropriate message to
+  # stderr if it wants to stop the merge commit.
+  #
+  # To enable this hook, rename this file to "pre-merge-commit".
+  
+  . git-sh-setup
+  test -x "$GIT_DIR/hooks/pre-commit" &&
+          exec "$GIT_DIR/hooks/pre-commit"
+  :
+│   │   ├── pre-push.sample
+  #!/bin/sh
+  
+  # An example hook script to verify what is about to be pushed.  Called by "git
+  # push" after it has checked the remote status, but before anything has been
+  # pushed.  If this script exits with a non-zero status nothing will be pushed.
+  #
+  # This hook is called with the following parameters:
+  #
+  # $1 -- Name of the remote to which the push is being done
+  # $2 -- URL to which the push is being done
+  #
+  # If pushing without using a named remote those arguments will be equal.
+  #
+  # Information about the commits which are being pushed is supplied as lines to
+  # the standard input in the form:
+  #
+  #   <local ref> <local oid> <remote ref> <remote oid>
+  #
+  # This sample shows how to prevent push of commits where the log message starts
+  # with "WIP" (work in progress).
+  
+  remote="$1"
+  url="$2"
+  
+  zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+  
+  while read local_ref local_oid remote_ref remote_oid
+  do
+  	if test "$local_oid" = "$zero"
+  	then
+  		# Handle delete
+  		:
+  	else
+  		if test "$remote_oid" = "$zero"
+  		then
+  			# New branch, examine all commits
+  			range="$local_oid"
+  		else
+  			# Update to existing branch, examine new commits
+  			range="$remote_oid..$local_oid"
+  		fi
+  
+  		# Check for WIP commit
+  		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
+  		if test -n "$commit"
+  		then
+  			echo >&2 "Found WIP commit in $local_ref, not pushing"
+  			exit 1
+  		fi
+  	fi
+  done
+  
+  exit 0
+│   │   ├── pre-rebase.sample
+  #!/bin/sh
+  #
+  # Copyright (c) 2006, 2008 Junio C Hamano
+  #
+  # The "pre-rebase" hook is run just before "git rebase" starts doing
+  # its job, and can prevent the command from running by exiting with
+  # non-zero status.
+  #
+  # The hook is called with the following parameters:
+  #
+  # $1 -- the upstream the series was forked from.
+  # $2 -- the branch being rebased (or empty when rebasing the current branch).
+  #
+  # This sample shows how to prevent topic branches that are already
+  # merged to 'next' branch from getting rebased, because allowing it
+  # would result in rebasing already published history.
+  
+  publish=next
+  basebranch="$1"
+  if test "$#" = 2
+  then
+  	topic="refs/heads/$2"
+  else
+  	topic=`git symbolic-ref HEAD` ||
+  	exit 0 ;# we do not interrupt rebasing detached HEAD
+  fi
+  
+  case "$topic" in
+  refs/heads/??/*)
+  	;;
+  *)
+  	exit 0 ;# we do not interrupt others.
+  	;;
+  esac
+  
+  # Now we are dealing with a topic branch being rebased
+  # on top of master.  Is it OK to rebase it?
+  
+  # Does the topic really exist?
+  git show-ref -q "$topic" || {
+  	echo >&2 "No such branch $topic"
+  	exit 1
+  }
+  
+  # Is topic fully merged to master?
+  not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
+  if test -z "$not_in_master"
+  then
+  	echo >&2 "$topic is fully merged to master; better remove it."
+  	exit 1 ;# we could allow it, but there is no point.
+  fi
+  
+  # Is topic ever merged to next?  If so you should not be rebasing it.
+  only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
+  only_next_2=`git rev-list ^master           ${publish} | sort`
+  if test "$only_next_1" = "$only_next_2"
+  then
+  	not_in_topic=`git rev-list "^$topic" master`
+  	if test -z "$not_in_topic"
+  	then
+  		echo >&2 "$topic is already up to date with master"
+  		exit 1 ;# we could allow it, but there is no point.
+  	else
+  		exit 0
+  	fi
+  else
+  	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
+  	/usr/bin/perl -e '
+  		my $topic = $ARGV[0];
+  		my $msg = "* $topic has commits already merged to public branch:\n";
+  		my (%not_in_next) = map {
+  			/^([0-9a-f]+) /;
+  			($1 => 1);
+  		} split(/\n/, $ARGV[1]);
+  		for my $elem (map {
+  				/^([0-9a-f]+) (.*)$/;
+  				[$1 => $2];
+  			} split(/\n/, $ARGV[2])) {
+  			if (!exists $not_in_next{$elem->[0]}) {
+  				if ($msg) {
+  					print STDERR $msg;
+  					undef $msg;
+  				}
+  				print STDERR " $elem->[1]\n";
+  			}
+  		}
+  	' "$topic" "$not_in_next" "$not_in_master"
+  	exit 1
+  fi
+  
+  <<\DOC_END
+  
+  This sample hook safeguards topic branches that have been
+  published from being rewound.
+  
+  The workflow assumed here is:
+  
+   * Once a topic branch forks from "master", "master" is never
+     merged into it again (either directly or indirectly).
+  
+   * Once a topic branch is fully cooked and merged into "master",
+     it is deleted.  If you need to build on top of it to correct
+     earlier mistakes, a new topic branch is created by forking at
+     the tip of the "master".  This is not strictly necessary, but
+     it makes it easier to keep your history simple.
+  
+   * Whenever you need to test or publish your changes to topic
+     branches, merge them into "next" branch.
+  
+  The script, being an example, hardcodes the publish branch name
+  to be "next", but it is trivial to make it configurable via
+  $GIT_DIR/config mechanism.
+  
+  With this workflow, you would want to know:
+  
+  (1) ... if a topic branch has ever been merged to "next".  Young
+      topic branches can have stupid mistakes you would rather
+      clean up before publishing, and things that have not been
+      merged into other branches can be easily rebased without
+      affecting other people.  But once it is published, you would
+      not want to rewind it.
+  
+  (2) ... if a topic branch has been fully merged to "master".
+      Then you can delete it.  More importantly, you should not
+      build on top of it -- other people may already want to
+      change things related to the topic as patches against your
+      "master", so if you need further changes, it is better to
+      fork the topic (perhaps with the same name) afresh from the
+      tip of "master".
+  
+  Let's look at this example:
+  
+  		   o---o---o---o---o---o---o---o---o---o "next"
+  		  /       /           /           /
+  		 /   a---a---b A     /           /
+  		/   /               /           /
+  	       /   /   c---c---c---c B         /
+  	      /   /   /             \         /
+  	     /   /   /   b---b C     \       /
+  	    /   /   /   /             \     /
+      ---o---o---o---o---o---o---o---o---o---o---o "master"
+  
+  
+  A, B and C are topic branches.
+  
+   * A has one fix since it was merged up to "next".
+  
+   * B has finished.  It has been fully merged up to "master" and "next",
+     and is ready to be deleted.
+  
+   * C has not merged to "next" at all.
+  
+  We would want to allow C to be rebased, refuse A, and encourage
+  B to be deleted.
+  
+  To compute (1):
+  
+  	git rev-list ^master ^topic next
+  	git rev-list ^master        next
+  
+  	if these match, topic has not merged in next at all.
+  
+  To compute (2):
+  
+  	git rev-list master..topic
+  
+  	if this is empty, it is fully merged to "master".
+  
+  DOC_END
+│   │   ├── pre-receive.sample
+  #!/bin/sh
+  #
+  # An example hook script to make use of push options.
+  # The example simply echoes all push options that start with 'echoback='
+  # and rejects all pushes when the "reject" push option is used.
+  #
+  # To enable this hook, rename this file to "pre-receive".
+  
+  if test -n "$GIT_PUSH_OPTION_COUNT"
+  then
+  	i=0
+  	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
+  	do
+  		eval "value=\$GIT_PUSH_OPTION_$i"
+  		case "$value" in
+  		echoback=*)
+  			echo "echo from the pre-receive-hook: ${value#*=}" >&2
+  			;;
+  		reject)
+  			exit 1
+  		esac
+  		i=$((i + 1))
+  	done
+  fi
+│   │   ├── prepare-commit-msg.sample
+  #!/bin/sh
+  #
+  # An example hook script to prepare the commit log message.
+  # Called by "git commit" with the name of the file that has the
+  # commit message, followed by the description of the commit
+  # message's source.  The hook's purpose is to edit the commit
+  # message file.  If the hook fails with a non-zero status,
+  # the commit is aborted.
+  #
+  # To enable this hook, rename this file to "prepare-commit-msg".
+  
+  # This hook includes three examples. The first one removes the
+  # "# Please enter the commit message..." help message.
+  #
+  # The second includes the output of "git diff --name-status -r"
+  # into the message, just before the "git status" output.  It is
+  # commented because it doesn't cope with --amend or with squashed
+  # commits.
+  #
+  # The third example adds a Signed-off-by line to the message, that can
+  # still be edited.  This is rarely a good idea.
+  
+  COMMIT_MSG_FILE=$1
+  COMMIT_SOURCE=$2
+  SHA1=$3
+  
+  /usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
+  
+  # case "$COMMIT_SOURCE,$SHA1" in
+  #  ,|template,)
+  #    /usr/bin/perl -i.bak -pe '
+  #       print "\n" . `git diff --cached --name-status -r`
+  # 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
+  #  *) ;;
+  # esac
+  
+  # SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+  # git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
+  # if test -z "$COMMIT_SOURCE"
+  # then
+  #   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
+  # fi
+│   │   ├── push-to-checkout.sample
+  #!/bin/sh
+  
+  # An example hook script to update a checked-out tree on a git push.
+  #
+  # This hook is invoked by git-receive-pack(1) when it reacts to git
+  # push and updates reference(s) in its repository, and when the push
+  # tries to update the branch that is currently checked out and the
+  # receive.denyCurrentBranch configuration variable is set to
+  # updateInstead.
+  #
+  # By default, such a push is refused if the working tree and the index
+  # of the remote repository has any difference from the currently
+  # checked out commit; when both the working tree and the index match
+  # the current commit, they are updated to match the newly pushed tip
+  # of the branch. This hook is to be used to override the default
+  # behaviour; however the code below reimplements the default behaviour
+  # as a starting point for convenient modification.
+  #
+  # The hook receives the commit with which the tip of the current
+  # branch is going to be updated:
+  commit=$1
+  
+  # It can exit with a non-zero status to refuse the push (when it does
+  # so, it must not modify the index or the working tree).
+  die () {
+  	echo >&2 "$*"
+  	exit 1
+  }
+  
+  # Or it can make any necessary changes to the working tree and to the
+  # index to bring them to the desired state when the tip of the current
+  # branch is updated to the new commit, and exit with a zero status.
+  #
+  # For example, the hook can simply run git read-tree -u -m HEAD "$1"
+  # in order to emulate git fetch that is run in the reverse direction
+  # with git push, as the two-tree form of git read-tree -u -m is
+  # essentially the same as git switch or git checkout that switches
+  # branches while keeping the local changes in the working tree that do
+  # not interfere with the difference between the branches.
+  
+  # The below is a more-or-less exact translation to shell of the C code
+  # for the default behaviour for git's push-to-checkout hook defined in
+  # the push_to_deploy() function in builtin/receive-pack.c.
+  #
+  # Note that the hook will be executed from the repository directory,
+  # not from the working tree, so if you want to perform operations on
+  # the working tree, you will have to adapt your code accordingly, e.g.
+  # by adding "cd .." or using relative paths.
+  
+  if ! git update-index -q --ignore-submodules --refresh
+  then
+  	die "Up-to-date check failed"
+  fi
+  
+  if ! git diff-files --quiet --ignore-submodules --
+  then
+  	die "Working directory has unstaged changes"
+  fi
+  
+  # This is a rough translation of:
+  #
+  #   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
+  if git cat-file -e HEAD 2>/dev/null
+  then
+  	head=HEAD
+  else
+  	head=$(git hash-object -t tree --stdin </dev/null)
+  fi
+  
+  if ! git diff-index --quiet --cached --ignore-submodules $head --
+  then
+  	die "Working directory has staged changes"
+  fi
+  
+  if ! git read-tree -u -m "$commit"
+  then
+  	die "Could not update working tree to new HEAD"
+  fi
+│   │   ├── sendemail-validate.sample
+  #!/bin/sh
+  
+  # An example hook script to validate a patch (and/or patch series) before
+  # sending it via email.
+  #
+  # The hook should exit with non-zero status after issuing an appropriate
+  # message if it wants to prevent the email(s) from being sent.
+  #
+  # To enable this hook, rename this file to "sendemail-validate".
+  #
+  # By default, it will only check that the patch(es) can be applied on top of
+  # the default upstream branch without conflicts in a secondary worktree. After
+  # validation (successful or not) of the last patch of a series, the worktree
+  # will be deleted.
+  #
+  # The following config variables can be set to change the default remote and
+  # remote ref that are used to apply the patches against:
+  #
+  #   sendemail.validateRemote (default: origin)
+  #   sendemail.validateRemoteRef (default: HEAD)
+  #
+  # Replace the TODO placeholders with appropriate checks according to your
+  # needs.
+  
+  validate_cover_letter () {
+  	file="$1"
+  	# TODO: Replace with appropriate checks (e.g. spell checking).
+  	true
+  }
+  
+  validate_patch () {
+  	file="$1"
+  	# Ensure that the patch applies without conflicts.
+  	git am -3 "$file" || return
+  	# TODO: Replace with appropriate checks for this patch
+  	# (e.g. checkpatch.pl).
+  	true
+  }
+  
+  validate_series () {
+  	# TODO: Replace with appropriate checks for the whole series
+  	# (e.g. quick build, coding style checks, etc.).
+  	true
+  }
+  
+  # main -------------------------------------------------------------------------
+  
+  if test "$GIT_SENDEMAIL_FILE_COUNTER" = 1
+  then
+  	remote=$(git config --default origin --get sendemail.validateRemote) &&
+  	ref=$(git config --default HEAD --get sendemail.validateRemoteRef) &&
+  	worktree=$(mktemp --tmpdir -d sendemail-validate.XXXXXXX) &&
+  	git worktree add -fd --checkout "$worktree" "refs/remotes/$remote/$ref" &&
+  	git config --replace-all sendemail.validateWorktree "$worktree"
+  else
+  	worktree=$(git config --get sendemail.validateWorktree)
+  fi || {
+  	echo "sendemail-validate: error: failed to prepare worktree" >&2
+  	exit 1
+  }
+  
+  unset GIT_DIR GIT_WORK_TREE
+  cd "$worktree" &&
+  
+  if grep -q "^diff --git " "$1"
+  then
+  	validate_patch "$1"
+  else
+  	validate_cover_letter "$1"
+  fi &&
+  
+  if test "$GIT_SENDEMAIL_FILE_COUNTER" = "$GIT_SENDEMAIL_FILE_TOTAL"
+  then
+  	git config --unset-all sendemail.validateWorktree &&
+  	trap 'git worktree remove -ff "$worktree"' EXIT &&
+  	validate_series
+  fi
+│   │   └── update.sample
+  #!/bin/sh
+  #
+  # An example hook script to block unannotated tags from entering.
+  # Called by "git receive-pack" with arguments: refname sha1-old sha1-new
+  #
+  # To enable this hook, rename this file to "update".
+  #
+  # Config
+  # ------
+  # hooks.allowunannotated
+  #   This boolean sets whether unannotated tags will be allowed into the
+  #   repository.  By default they won't be.
+  # hooks.allowdeletetag
+  #   This boolean sets whether deleting tags will be allowed in the
+  #   repository.  By default they won't be.
+  # hooks.allowmodifytag
+  #   This boolean sets whether a tag may be modified after creation. By default
+  #   it won't be.
+  # hooks.allowdeletebranch
+  #   This boolean sets whether deleting branches will be allowed in the
+  #   repository.  By default they won't be.
+  # hooks.denycreatebranch
+  #   This boolean sets whether remotely creating branches will be denied
+  #   in the repository.  By default this is allowed.
+  #
+  
+  # --- Command line
+  refname="$1"
+  oldrev="$2"
+  newrev="$3"
+  
+  # --- Safety check
+  if [ -z "$GIT_DIR" ]; then
+  	echo "Don't run this script from the command line." >&2
+  	echo " (if you want, you could supply GIT_DIR then run" >&2
+  	echo "  $0 <ref> <oldrev> <newrev>)" >&2
+  	exit 1
+  fi
+  
+  if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
+  	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
+  	exit 1
+  fi
+  
+  # --- Config
+  allowunannotated=$(git config --type=bool hooks.allowunannotated)
+  allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
+  denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
+  allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
+  allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
+  
+  # check for no description
+  projectdesc=$(sed -e '1q' "$GIT_DIR/description")
+  case "$projectdesc" in
+  "Unnamed repository"* | "")
+  	echo "*** Project description file hasn't been set" >&2
+  	exit 1
+  	;;
+  esac
+  
+  # --- Check types
+  # if $newrev is 0000...0000, it's a commit to delete a ref.
+  zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+  if [ "$newrev" = "$zero" ]; then
+  	newrev_type=delete
+  else
+  	newrev_type=$(git cat-file -t $newrev)
+  fi
+  
+  case "$refname","$newrev_type" in
+  	refs/tags/*,commit)
+  		# un-annotated tag
+  		short_refname=${refname##refs/tags/}
+  		if [ "$allowunannotated" != "true" ]; then
+  			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
+  			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
+  			exit 1
+  		fi
+  		;;
+  	refs/tags/*,delete)
+  		# delete tag
+  		if [ "$allowdeletetag" != "true" ]; then
+  			echo "*** Deleting a tag is not allowed in this repository" >&2
+  			exit 1
+  		fi
+  		;;
+  	refs/tags/*,tag)
+  		# annotated tag
+  		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
+  		then
+  			echo "*** Tag '$refname' already exists." >&2
+  			echo "*** Modifying a tag is not allowed in this repository." >&2
+  			exit 1
+  		fi
+  		;;
+  	refs/heads/*,commit)
+  		# branch
+  		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
+  			echo "*** Creating a branch is not allowed in this repository" >&2
+  			exit 1
+  		fi
+  		;;
+  	refs/heads/*,delete)
+  		# delete branch
+  		if [ "$allowdeletebranch" != "true" ]; then
+  			echo "*** Deleting a branch is not allowed in this repository" >&2
+  			exit 1
+  		fi
+  		;;
+  	refs/remotes/*,commit)
+  		# tracking branch
+  		;;
+  	refs/remotes/*,delete)
+  		# delete tracking branch
+  		if [ "$allowdeletebranch" != "true" ]; then
+  			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
+  			exit 1
+  		fi
+  		;;
+  	*)
+  		# Anything else (is there anything else?)
+  		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
+  		exit 1
+  		;;
+  esac
+  
+  # --- Finished
+  exit 0
+│   ├── index
+  [Error: 'utf-8' codec can't decode byte 0xb2 in position 13: invalid start byte]
+│   ├── info
+│   │   └── exclude
+  # git ls-files --others --exclude-from=.git/info/exclude
+  # Lines that start with '#' are comments.
+  # For a project mostly in C, the following would be a good set of
+  # exclude patterns (uncomment them if you want to use them):
+  # *.[oa]
+  # *~
+│   ├── logs
+│   │   ├── HEAD
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790095943 +0330	commit (initial): Initial commit
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0000000000000000000000000000000000000000 muvixo <godarshia20@gmail.com> 1790095947 +0330	Branch: renamed refs/heads/master to refs/heads/main
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790095947 +0330	Branch: renamed refs/heads/master to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0000000000000000000000000000000000000000 muvixo <godarshia20@gmail.com> 1790098291 +0330	Branch: renamed refs/heads/main to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098291 +0330	Branch: renamed refs/heads/main to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0000000000000000000000000000000000000000 muvixo <godarshia20@gmail.com> 1790098294 +0330	Branch: renamed refs/heads/main to refs/heads/mai
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098294 +0330	Branch: renamed refs/heads/main to refs/heads/mai
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0000000000000000000000000000000000000000 muvixo <godarshia20@gmail.com> 1790098296 +0330	Branch: renamed refs/heads/mai to refs/heads/main
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098296 +0330	Branch: renamed refs/heads/mai to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0e9d60cf2c4313016838030dc2cc9544094f7481 muvixo <godarshia20@gmail.com> 1790098705 +0330	commit: Fix: use CodeMC repo for bungeecord-chat 1.8-SNAPSHOT
+│   │   └── refs
+│   │       ├── heads
+│   │       │   └── main
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790095943 +0330	commit (initial): Initial commit
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790095947 +0330	Branch: renamed refs/heads/master to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098291 +0330	Branch: renamed refs/heads/main to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098294 +0330	Branch: renamed refs/heads/main to refs/heads/mai
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098296 +0330	Branch: renamed refs/heads/mai to refs/heads/main
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0e9d60cf2c4313016838030dc2cc9544094f7481 muvixo <godarshia20@gmail.com> 1790098705 +0330	commit: Fix: use CodeMC repo for bungeecord-chat 1.8-SNAPSHOT
+│   │       └── remotes
+│   │           └── origin
+│   │               └── main
+  0000000000000000000000000000000000000000 19c60b27a94e5b0576cbece243b80f58d23cc55a muvixo <godarshia20@gmail.com> 1790098317 +0330	update by push
+  19c60b27a94e5b0576cbece243b80f58d23cc55a 0e9d60cf2c4313016838030dc2cc9544094f7481 muvixo <godarshia20@gmail.com> 1790098719 +0330	update by push
+│   ├── objects
+│   │   ├── 04
+│   │   │   └── 72b8a94c08358b85a4861ed51071b8c4e5118a
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── 0b
+│   │   │   └── 936190d319dde536fc67521b9ff5033b47a0a9
+  [Error: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+│   │   ├── 0e
+│   │   │   └── 9d60cf2c4313016838030dc2cc9544094f7481
+  [Error: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+│   │   ├── 19
+│   │   │   └── c60b27a94e5b0576cbece243b80f58d23cc55a
+  [Error: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+│   │   ├── 26
+│   │   │   └── 5653ca6258ba966bbb79a55044e15f0f09ff83
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── 28
+│   │   │   ├── 09c6d8bf015dd82ee20b7c98912504f2b36f22
+  [Error: 'utf-8' codec can't decode byte 0xad in position 2: invalid start byte]
+│   │   │   └── d6d07074b641ebd79a2b484ba10e1316cc1c08
+  [Error: 'utf-8' codec can't decode byte 0xcd in position 19: invalid continuation byte]
+│   │   ├── 35
+│   │   │   └── 60958738446448ac384eaa381fb6536e382440
+  [Error: 'utf-8' codec can't decode byte 0xdb in position 6: invalid continuation byte]
+│   │   ├── 36
+│   │   │   └── 2084c1394f11b8bf6de6d714d8eaae17ffe10a
+  [Error: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+│   │   ├── 45
+│   │   │   └── 320a280a97de59e6a66771bd233f7df95919bc
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── 4d
+│   │   │   └── a0134b69da6f5d6796b20e7c0b958f23860ed1
+  [Error: 'utf-8' codec can't decode byte 0x8d in position 2: invalid start byte]
+│   │   ├── 54
+│   │   │   └── 95ac3b175e4020ac12bebf57779a5f58a14e8c
+  [Error: 'utf-8' codec can't decode byte 0xbd in position 16: invalid start byte]
+│   │   ├── 57
+│   │   │   └── 749cddaff726c7508bea5d5e1385e904be477e
+  [Error: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+│   │   ├── 61
+│   │   │   └── e8baa0fbf2b5123298f7c9d7c7ba9713e219ff
+  [Error: 'utf-8' codec can't decode byte 0xa5 in position 2: invalid start byte]
+│   │   ├── 71
+│   │   │   └── 2405e11e392a70acca85e663be0ab4075648e4
+  [Error: 'utf-8' codec can't decode byte 0x8d in position 2: invalid start byte]
+│   │   ├── 73
+│   │   │   └── 772eb96e33626b2d5dc159d89718bca1a24221
+  [Error: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+│   │   ├── 7b
+│   │   │   └── 7e4381940eafc7a6f5efe2abbf32f170e17fbe
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── 7c
+│   │   │   └── 47d99697ae8bf4a194a6c3b8d8f1e643e57a4c
+  [Error: 'utf-8' codec can't decode byte 0xbd in position 16: invalid start byte]
+│   │   ├── 84
+│   │   │   └── b316f7cabd12e8a7bd1a859a8c1c23240de6c7
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── a9
+│   │   │   └── 096e3d949edf02bc8e0f218f721ca614250407
+  [Error: 'utf-8' codec can't decode byte 0xad in position 2: invalid start byte]
+│   │   ├── b3
+│   │   │   └── 3cf108831c27bda527f55896f03776c9fc9756
+  [Error: 'utf-8' codec can't decode byte 0x8d in position 2: invalid start byte]
+│   │   ├── bf
+│   │   │   └── 6f0db12c4eaf11d9a37b48c8b792a725a9a3ae
+  [Error: 'utf-8' codec can't decode byte 0xce in position 18: invalid continuation byte]
+│   │   ├── c3
+│   │   │   └── 1c3ec3895a08e71ff1ea98ce7d4e696f7d03d3
+  [Error: 'utf-8' codec can't decode byte 0xb2 in position 8: invalid start byte]
+│   │   ├── c9
+│   │   │   └── ae9a4f87ee0c2f964c078c34c11ba134786f78
+  [Error: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+│   │   ├── d3
+│   │   │   └── 5ce84f1831f931b093160f8698d54d0840e2ce
+  [Error: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+│   │   ├── d7
+│   │   │   └── 138d3823af5be2261229842e511bdd370b2c3d
+  [Error: 'utf-8' codec can't decode byte 0x8c in position 3: invalid start byte]
+│   │   ├── e3
+│   │   │   └── 096a55dfd286305996962b8c61a1f0c4135309
+  [Error: 'utf-8' codec can't decode byte 0xed in position 2: invalid continuation byte]
+│   │   ├── info
+│   │   └── pack
+│   └── refs
+│       ├── heads
+│       │   └── main
+  0e9d60cf2c4313016838030dc2cc9544094f7481
+│       ├── remotes
+│       │   └── origin
+│       │       └── main
+  0e9d60cf2c4313016838030dc2cc9544094f7481
+│       └── tags
+├── .github
+│   ├── ConnectionGauard
+│   └── workflows
+│       └── build.yml
+  name: Build ConnectionGuard
+  
+  on:
+    push:
+      branches: [ main, master ]
+      tags: [ 'v*' ]
+    pull_request:
+      branches: [ main, master ]
+    workflow_dispatch:
+  
+  jobs:
+    build:
+      runs-on: ubuntu-latest
+  
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+  
+        - name: Set up JDK 8
+          uses: actions/setup-java@v4
+          with:
+            distribution: temurin
+            java-version: '8'
+            cache: maven
+  
+        - name: Build with Maven
+          run: mvn -B clean package --file pom.xml
+  
+        - name: Upload artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: ConnectionGuard
+            path: target/ConnectionGuard-*.jar
+            if-no-files-found: error
+  
+        - name: Create Release
+          if: startsWith(github.ref, 'refs/tags/v')
+          uses: softprops/action-gh-release@v2
+          with:
+            files: target/ConnectionGuard-*.jar
+            generate_release_notes: true
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+├── .gitignore
+  target/
+  *.class
+  *.jar
+  .idea/
+  *.iml
+  .vscode/
+  .settings/
+  .classpath
+  .project
+  build/
+  out/
+├── README.md
+  # ConnectionGuard
+  
+  **Unstable Connection / Ping Guard** — standalone plugin.
+  
+  **Author:** muvixo
+  
+  ---
+  
+  ## Features
+  
+  - Detects high-ping players and kicks them after a configurable grace period
+  - Warns with chat + title + sound
+  - TPS-aware: skips checks during lag spikes
+  - Bypass by permission, name list, or in-game command
+  - Whitelist mode (only check listed players)
+  - Force a fake ping for testing
+  - PlaceholderAPI support
+  - Fully configurable messages
+  
+  ---
+  
+  ## Commands
+  
+  | Command | Permission | Description |
+  |---|---|---|
+  | `/cg help` | `connectionguard.use` | Show help |
+  | `/cg creator` | `connectionguard.creator` | Show credits |
+  | `/cg ping [player]` | `connectionguard.check` | Check ping |
+  | `/cg status` | `connectionguard.admin` | Show plugin status |
+  | `/cg on` / `/cg off` / `/cg toggle` | `connectionguard.toggle` | Toggle checker |
+  | `/cg reload` | `connectionguard.reload` | Reload config |
+  | `/cg set ping <ms>` | `connectionguard.set` | Change ping threshold |
+  | `/cg set grace <sec>` | `connectionguard.set` | Change grace period |
+  | `/cg set interval <ticks>` | `connectionguard.set` | Change check interval |
+  | `/cg bypass <player>` | `connectionguard.admin` | Add bypass |
+  | `/cg unbypass <player>` | `connectionguard.admin` | Remove bypass |
+  | `/cg list` | `connectionguard.admin` | List bypassed |
+  | `/cg forceping <player> <ms>` | `connectionguard.forceping` | Force a ping |
+  | `/cg clearping <player>` | `connectionguard.forceping` | Remove forced ping |
+  
+  ---
+  
+  ## Permissions
+  
+  | Permission | Default | Description |
+  |---|---|---|
+  | `connectionguard.*` | op | Everything |
+  | `connectionguard.use` | true | `/cg help`, `/cg ping` |
+  | `connectionguard.admin` | op | Admin commands |
+  | `connectionguard.reload` | op | Reload |
+  | `connectionguard.toggle` | op | Toggle |
+  | `connectionguard.bypass` | false | Bypass the checker |
+  | `connectionguard.check` | true | Check ping |
+  | `connectionguard.creator` | true | See credits |
+  | `connectionguard.forceping` | op | Force ping |
+  | `connectionguard.set` | op | Change settings |
+  
+  ---
+  
+  ## Placeholders (PlaceholderAPI)
+  
+  | Placeholder | Description |
+  |---|---|
+  | `%connectionguard_enabled%` | true / false |
+  | `%connectionguard_threshold%` | Ping threshold |
+  | `%connectionguard_grace%` | Grace period |
+  | `%connectionguard_interval%` | Check interval |
+  | `%connectionguard_bypassed%` | Number of bypassed players |
+  | `%connectionguard_ping%` | Player's effective ping |
+  | `%connectionguard_realping%` | Player's real ping |
+  | `%connectionguard_bypass%` | true / false |
+  | `%connectionguard_forced%` | Forced ping value (0 if none) |
+  
+  ---
+  
+  ## Build
+  
+  ```bash
+  mvn clean package
+  ```
+  
+  Output: `target/ConnectionGuard-1.0.0.jar`
+  
+  Or push to GitHub — the workflow in `.github/workflows/build.yml` builds and uploads the artifact.
+  
+  To publish a release: create a tag like `v1.0.0` and push it.
+  
+  ---
+  
+  ## Config
+  
+  See `src/main/resources/config.yml`.
+  
+  Key options:
+  - `ping` — threshold in ms
+  - `grace-seconds` — how long above threshold before kick
+  - `check-interval` — how often to check (ticks)
+  - `advanced.tps-guard` — skip checks during lag
+  - `bypass.permission` — permission to bypass
+  - `whitelist.enabled` — only check listed players
+├── ee.py
+  import os
+  
+  def print_tree(folder_path, file_handle, prefix="", show_content=False):
+      entries = sorted(os.listdir(folder_path))
+      for i, entry in enumerate(entries):
+          path = os.path.join(folder_path, entry)
+          is_last = i == len(entries) - 1
+          connector = "└── " if is_last else "├── "
+          file_handle.write(f"{prefix}{connector}{entry}\n")
+  
+          if os.path.isdir(path):
+              extension_prefix = "    " if is_last else "│   "
+              print_tree(path, file_handle, prefix + extension_prefix, show_content)
+          else:
+              if show_content:
+                  try:
+                      with open(path, "r", encoding="utf-8") as f:
+                          content = f.read().strip()
+                          if content:
+                              content_lines = content.splitlines()
+                              # Content appears directly under the file name
+                              for line in content_lines:
+                                  file_handle.write(f"  {line}\n")  # Just 2 spaces
+                  except Exception as e:
+                      file_handle.write(f"  [Error: {e}]\n")
+  
+  def save_tree_to_file(output_filename="folder_structure.txt"):
+      current_folder = os.path.dirname(os.path.abspath(__file__))
+      
+      with open(output_filename, "w", encoding="utf-8") as f:
+          f.write(f"{current_folder}/\n\n")
+          print_tree(current_folder, f, show_content=True)
+      
+      print(f"Output saved to {output_filename}")
+  
+  if __name__ == "__main__":
+      save_tree_to_file()
+├── folder_structure.txt
+├── pom.xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <project xmlns="http://maven.apache.org/POM/4.0.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                               http://maven.apache.org/xsd/maven-4.0.0.xsd">
+      <modelVersion>4.0.0</modelVersion>
+  
+      <groupId>org.vansama</groupId>
+      <artifactId>ConnectionGuard</artifactId>
+      <version>1.0.0</version>
+      <packaging>jar</packaging>
+  
+      <name>ConnectionGuard</name>
+      <description>Unstable Connection / Ping Guard - standalone plugin</description>
+  
+      <properties>
+          <java.version>1.8</java.version>
+          <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+          <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+      </properties>
+  
+      <!-- ============================================================ -->
+      <!--  REPOSITORIES                                                -->
+      <!-- ============================================================ -->
+      <repositories>
+          <!-- CodeMC — serves bungeecord-chat 1.8-SNAPSHOT (required!) -->
+          <repository>
+              <id>codemc-repo</id>
+              <url>https://repo.codemc.io/repository/maven-public/</url>
+          </repository>
+  
+          <!-- Spigot snapshots — serves spigot-api 1.8.8 -->
+          <repository>
+              <id>spigotmc-repo</id>
+              <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+          </repository>
+  
+          <!-- Sonatype — fallback for common deps -->
+          <repository>
+              <id>sonatype</id>
+              <url>https://oss.sonatype.org/content/groups/public/</url>
+          </repository>
+  
+          <!-- PlaceholderAPI -->
+          <repository>
+              <id>placeholderapi</id>
+              <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
+          </repository>
+      </repositories>
+  
+      <!-- ============================================================ -->
+      <!--  DEPENDENCIES                                                -->
+      <!-- ============================================================ -->
+      <dependencies>
+          <!-- ========================================================== -->
+          <!--  Spigot API 1.8.8                                           -->
+          <!--  We exclude bungeecord-chat (Maven can't find it as a       -->
+          <!--  transitive dep) and re-declare it below from CodeMC.       -->
+          <!-- ========================================================== -->
+          <dependency>
+              <groupId>org.spigotmc</groupId>
+              <artifactId>spigot-api</artifactId>
+              <version>1.8.8-R0.1-SNAPSHOT</version>
+              <scope>provided</scope>
+              <exclusions>
+                  <exclusion>
+                      <groupId>net.md-5</groupId>
+                      <artifactId>bungeecord-chat</artifactId>
+                  </exclusion>
+              </exclusions>
+          </dependency>
+  
+          <!-- ========================================================== -->
+          <!--  BungeeCord Chat 1.8-SNAPSHOT                               -->
+          <!--  Required by spigot-api. Served by CodeMC.                  -->
+          <!-- ========================================================== -->
+          <dependency>
+              <groupId>net.md-5</groupId>
+              <artifactId>bungeecord-chat</artifactId>
+              <version>1.8-SNAPSHOT</version>
+              <scope>provided</scope>
+              <optional>true</optional>
+          </dependency>
+  
+          <!-- ========================================================== -->
+          <!--  PlaceholderAPI (optional)                                  -->
+          <!-- ========================================================== -->
+          <dependency>
+              <groupId>me.clip</groupId>
+              <artifactId>placeholderapi</artifactId>
+              <version>2.11.5</version>
+              <scope>provided</scope>
+              <optional>true</optional>
+          </dependency>
+      </dependencies>
+  
+      <!-- ============================================================ -->
+      <!--  BUILD                                                       -->
+      <!-- ============================================================ -->
+      <build>
+          <finalName>${project.artifactId}-${project.version}</finalName>
+  
+          <resources>
+              <resource>
+                  <directory>src/main/resources</directory>
+                  <filtering>true</filtering>
+                  <includes>
+                      <include>plugin.yml</include>
+                      <include>config.yml</include>
+                  </includes>
+              </resource>
+          </resources>
+  
+          <plugins>
+              <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-compiler-plugin</artifactId>
+                  <version>3.11.0</version>
+                  <configuration>
+                      <source>${java.version}</source>
+                      <target>${java.version}</target>
+                      <encoding>UTF-8</encoding>
+                  </configuration>
+              </plugin>
+  
+              <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-jar-plugin</artifactId>
+                  <version>3.3.0</version>
+                  <configuration>
+                      <archive>
+                          <addMavenDescriptor>false</addMavenDescriptor>
+                      </archive>
+                  </configuration>
+              </plugin>
+          </plugins>
+      </build>
+  </project>
+└── src
+    └── main
+        ├── java
+        │   └── org
+        │       └── vansama
+        │           └── connectionguard
+        │               ├── Connection.java
+  package org.vansama.connectionguard;
+  
+  import java.util.HashMap;
+  import java.util.HashSet;
+  import java.util.List;
+  import java.util.Map;
+  import java.util.Set;
+  import java.util.UUID;
+  import org.bukkit.Bukkit;
+  import org.bukkit.ChatColor;
+  import org.bukkit.GameMode;
+  import org.bukkit.Sound;
+  import org.bukkit.configuration.file.FileConfiguration;
+  import org.bukkit.entity.Player;
+  import org.bukkit.event.EventHandler;
+  import org.bukkit.event.EventPriority;
+  import org.bukkit.event.Listener;
+  import org.bukkit.event.player.PlayerJoinEvent;
+  import org.bukkit.event.player.PlayerQuitEvent;
+  
+  public class Connection implements Listener {
+  
+      private final ConnectionGuard plugin;
+  
+      private boolean enabled;
+      private int pingThreshold;
+      private int checkInterval;
+      private int graceSeconds;
+      private int warnCooldown;
+  
+      private String prefix;
+      private String msgKick;
+      private String msgBroadcast;
+      private String msgWarnTitle;
+      private String msgWarnSubtitle;
+      private String msgStableAgain;
+      private String msgNoPerm;
+      private String msgReloaded;
+      private String msgEnabled;
+      private String msgDisabled;
+      private String msgBypassAdded;
+      private String msgBypassRemoved;
+      private String msgForcedPingSet;
+      private String msgForcedPingCleared;
+      private String msgPlayerNotFound;
+      private String msgPingSelf;
+      private String msgPingOther;
+      private String msgPingSet;
+      private String msgGraceSet;
+      private String msgIntervalSet;
+      private String msgUsage;
+  
+      private boolean kickTitleEnabled;
+      private String kickTitle;
+      private String kickSubtitle;
+      private boolean kickSoundEnabled;
+      private String kickSoundName;
+  
+      private boolean warnTitleEnabled;
+      private boolean warnChatEnabled;
+      private boolean warnSoundEnabled;
+      private String warnSoundName;
+  
+      private boolean countdownChatEnabled;
+      private boolean countdownSoundEnabled;
+      private String countdownSoundName;
+      private int countdownCooldownSeconds;
+  
+      private String bypassPermission;
+      private String bypassLegacyPermission;
+      private Set<String> bypassNames = new HashSet<String>();
+  
+      private boolean whitelistEnabled;
+      private Set<String> whitelistNames = new HashSet<String>();
+  
+      private boolean tpsGuardEnabled;
+      private double tpsGuardMinTps;
+      private boolean logKicks;
+      private boolean broadcastKicks;
+      private boolean ignoreCreative;
+      private boolean debug;
+  
+      private final Map<UUID, Long> highPingSince = new HashMap<UUID, Long>();
+      private final Map<UUID, Long> lastWarnTime = new HashMap<UUID, Long>();
+      private final Set<UUID> bypassPlayers = new HashSet<UUID>();
+      private final Map<UUID, Integer> forcedPing = new HashMap<UUID, Integer>();
+  
+      private int taskId = -1;
+  
+      public Connection(ConnectionGuard plugin) {
+          this.plugin = plugin;
+          loadConfiguration();
+          startTask();
+      }
+  
+      public void loadConfiguration() {
+          FileConfiguration c = this.plugin.getConfig();
+  
+          this.enabled = c.getBoolean("enabled", true);
+  
+          this.pingThreshold = c.getInt("ping", 150);
+          this.checkInterval = c.getInt("check-interval", 20);
+          this.graceSeconds = c.getInt("grace-seconds", 30);
+          this.warnCooldown = c.getInt("warn-cooldown", 5);
+  
+          this.prefix = c.getString("messages.prefix", "&8[&cCG&8] &r");
+          this.msgKick = c.getString("messages.kicked",
+                  "&cUnstable connection\n&fYour ping is too high: &e%ping%ms&7/&e%max%ms");
+          this.msgBroadcast = c.getString("messages.broadcast",
+                  "&c%player% &7was kicked for &eUnstable Connection &7(&c%ping%ms&7)");
+          this.msgWarnTitle = c.getString("messages.warn-title", "&c&lUnstable Connection");
+          this.msgWarnSubtitle = c.getString("messages.warn-subtitle",
+                  "&7Ping: &e%ping%ms &7| Kick in &e%seconds%s");
+          this.msgStableAgain = c.getString("messages.stable-again", "&aYour connection is stable again.");
+          this.msgNoPerm = c.getString("messages.no-permission", "&cYou do not have permission.");
+          this.msgReloaded = c.getString("messages.reloaded", "&aConfiguration reloaded.");
+          this.msgEnabled = c.getString("messages.enabled-msg", "&aConnection check &lENABLED&a.");
+          this.msgDisabled = c.getString("messages.disabled-msg", "&cConnection check &lDISABLED&c.");
+          this.msgBypassAdded = c.getString("messages.bypass-added",
+                  "&a%player% is now bypassing connection check.");
+          this.msgBypassRemoved = c.getString("messages.bypass-removed",
+                  "&a%player% is no longer bypassing.");
+          this.msgForcedPingSet = c.getString("messages.forced-ping-set",
+                  "&aForced ping for &e%player% &aset to &e%ping%ms&a.");
+          this.msgForcedPingCleared = c.getString("messages.forced-ping-cleared",
+                  "&aForced ping removed for &e%player%&a.");
+          this.msgPlayerNotFound = c.getString("messages.player-not-found",
+                  "&cPlayer not found: &e%player%");
+          this.msgPingSelf = c.getString("messages.ping-self", "&7Your ping: &e%ping%ms");
+          this.msgPingOther = c.getString("messages.ping-other", "&7%player%'s ping: &e%ping%ms");
+          this.msgPingSet = c.getString("messages.ping-set", "&aPing threshold set to &e%ping%ms&a.");
+          this.msgGraceSet = c.getString("messages.grace-set", "&aGrace period set to &e%seconds%s&a.");
+          this.msgIntervalSet = c.getString("messages.interval-set", "&aCheck interval set to &e%ticks% ticks&a.");
+          this.msgUsage = c.getString("messages.usage", "&cUsage: &e%usage%");
+  
+          this.kickTitleEnabled = c.getBoolean("kick.title-enabled", true);
+          this.kickTitle = c.getString("kick.title", "&c&lUNSTABLE CONNECTION");
+          this.kickSubtitle = c.getString("kick.subtitle", "&7Ping: &e%ping%ms &7/ &e%max%ms");
+          this.kickSoundEnabled = c.getBoolean("kick.sound-enabled", true);
+          this.kickSoundName = c.getString("kick.sound", "NOTE_BASS");
+  
+          this.warnTitleEnabled = c.getBoolean("warnings.title-enabled", true);
+          this.warnChatEnabled = c.getBoolean("warnings.chat-enabled", true);
+          this.warnSoundEnabled = c.getBoolean("warnings.sound-enabled", true);
+          this.warnSoundName = c.getString("warnings.sound", "NOTE_BASS");
+  
+          this.countdownChatEnabled = c.getBoolean("warnings.countdown.chat-enabled", true);
+          this.countdownSoundEnabled = c.getBoolean("warnings.countdown.sound-enabled", true);
+          this.countdownSoundName = c.getString("warnings.countdown.sound", "CLICK");
+          this.countdownCooldownSeconds = c.getInt("warnings.countdown.cooldown-seconds", 5);
+  
+          this.bypassPermission = c.getString("bypass.permission", "connectionguard.bypass");
+          this.bypassLegacyPermission = c.getString("bypass.legacy-permission",
+                  "buildffa.connection.bypass");
+          this.bypassNames = new HashSet<String>();
+          List<String> bpNames = c.getStringList("bypass.players");
+          if (bpNames != null) {
+              for (String n : bpNames) {
+                  if (n != null && !n.isEmpty()) this.bypassNames.add(n.toLowerCase());
+              }
+          }
+  
+          this.whitelistEnabled = c.getBoolean("whitelist.enabled", false);
+          this.whitelistNames = new HashSet<String>();
+          List<String> wlNames = c.getStringList("whitelist.players");
+          if (wlNames != null) {
+              for (String n : wlNames) {
+                  if (n != null && !n.isEmpty()) this.whitelistNames.add(n.toLowerCase());
+              }
+          }
+  
+          this.tpsGuardEnabled = c.getBoolean("advanced.tps-guard.enabled", true);
+          this.tpsGuardMinTps = c.getDouble("advanced.tps-guard.min-tps", 15.0D);
+          this.logKicks = c.getBoolean("advanced.log-kicks", true);
+          this.broadcastKicks = c.getBoolean("advanced.broadcast-kicks", true);
+          this.ignoreCreative = c.getBoolean("advanced.ignore-creative", true);
+          this.debug = c.getBoolean("advanced.debug", false);
+  
+          this.plugin.getLogger().info("Connection check " +
+                  (this.enabled ? "ENABLED at " + this.pingThreshold + "ms" : "DISABLED"));
+      }
+  
+      public void reloadConfig() {
+          loadConfiguration();
+          restartTask();
+      }
+  
+      private void startTask() {
+          if (this.taskId != -1) {
+              Bukkit.getScheduler().cancelTask(this.taskId);
+              this.taskId = -1;
+          }
+          this.taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this.plugin, new Runnable() {
+              @Override
+              public void run() {
+                  if (!enabled) return;
+                  tick();
+              }
+          }, 20L, (long) this.checkInterval);
+      }
+  
+      private void restartTask() {
+          startTask();
+      }
+  
+      public void shutdown() {
+          if (this.taskId != -1) {
+              Bukkit.getScheduler().cancelTask(this.taskId);
+              this.taskId = -1;
+          }
+          this.highPingSince.clear();
+          this.lastWarnTime.clear();
+          this.bypassPlayers.clear();
+          this.forcedPing.clear();
+      }
+  
+      private void tick() {
+          if (this.tpsGuardEnabled) {
+              double tps = PingUtil.getTps();
+              if (tps < this.tpsGuardMinTps) {
+                  if (this.debug) {
+                      this.plugin.getLogger().info("[DEBUG] Skipping check (TPS=" + tps + ")");
+                  }
+                  return;
+              }
+          }
+  
+          long now = System.currentTimeMillis();
+  
+          for (Player player : Bukkit.getOnlinePlayers()) {
+              UUID id = player.getUniqueId();
+  
+              if (shouldSkip(player)) {
+                  this.highPingSince.remove(id);
+                  this.lastWarnTime.remove(id);
+                  continue;
+              }
+  
+              int ping = getEffectivePing(player);
+  
+              if (ping >= this.pingThreshold) {
+                  if (!this.highPingSince.containsKey(id)) {
+                      this.highPingSince.put(id, Long.valueOf(now));
+                      this.lastWarnTime.put(id, Long.valueOf(now));
+                      sendWarning(player, ping);
+                      continue;
+                  }
+  
+                  long since = this.highPingSince.get(id).longValue();
+                  long highPingMillis = now - since;
+  
+                  if (highPingMillis >= (this.graceSeconds * 1000L)) {
+                      kickPlayer(player, ping);
+                      this.highPingSince.remove(id);
+                      this.lastWarnTime.remove(id);
+                      continue;
+                  }
+  
+                  long lastWarn = this.lastWarnTime.containsKey(id)
+                          ? this.lastWarnTime.get(id).longValue() : 0L;
+                  if (now - lastWarn >= (this.countdownCooldownSeconds * 1000L)) {
+                      sendCountdown(player, ping, highPingMillis);
+                      this.lastWarnTime.put(id, Long.valueOf(now));
+                  }
+              } else {
+                  if (this.highPingSince.containsKey(id)) {
+                      this.highPingSince.remove(id);
+                      this.lastWarnTime.remove(id);
+                      player.sendMessage(colorize(this.prefix + this.msgStableAgain));
+                  }
+              }
+          }
+      }
+  
+      private boolean shouldSkip(Player player) {
+          UUID id = player.getUniqueId();
+  
+          if (this.bypassPlayers.contains(id)) return true;
+  
+          if (this.bypassPermission != null && !this.bypassPermission.isEmpty()
+                  && player.hasPermission(this.bypassPermission)) return true;
+  
+          if (this.bypassLegacyPermission != null && !this.bypassLegacyPermission.isEmpty()
+                  && player.hasPermission(this.bypassLegacyPermission)) return true;
+  
+          if (this.bypassNames.contains(player.getName().toLowerCase())) return true;
+  
+          if (this.whitelistEnabled
+                  && !this.whitelistNames.contains(player.getName().toLowerCase())) {
+              return true;
+          }
+  
+          if (this.ignoreCreative
+                  && (player.getGameMode() == GameMode.CREATIVE
+                      || player.getGameMode() == GameMode.SPECTATOR)) {
+              return true;
+          }
+  
+          return false;
+      }
+  
+      private void sendWarning(Player player, int ping) {
+          if (this.warnTitleEnabled) {
+              sendTitle(player,
+                      this.msgWarnTitle.replace("%ping%", String.valueOf(ping))
+                              .replace("%seconds%", String.valueOf(this.graceSeconds)),
+                      this.msgWarnSubtitle.replace("%ping%", String.valueOf(ping))
+                              .replace("%seconds%", String.valueOf(this.graceSeconds)));
+          }
+  
+          if (this.warnChatEnabled) {
+              player.sendMessage(colorize("&8&m----------------------------------"));
+              player.sendMessage(colorize(this.prefix + this.msgWarnTitle
+                      .replace("%ping%", String.valueOf(ping))));
+              player.sendMessage(colorize("&7Your ping is too high: &e" + ping + "ms"));
+              player.sendMessage(colorize("&7You have &e" + this.graceSeconds
+                      + " seconds &7to stabilize."));
+              player.sendMessage(colorize("&8&m----------------------------------"));
+          }
+  
+          if (this.warnSoundEnabled) {
+              playSound(player, this.warnSoundName, 1.0F, 1.0F);
+          }
+      }
+  
+      private void sendCountdown(Player player, int ping, long highPingMillis) {
+          long remaining = (this.graceSeconds * 1000L) - highPingMillis;
+          int seconds = (int) Math.ceil(remaining / 1000.0);
+  
+          ChatColor color;
+          if (seconds <= 3) color = ChatColor.RED;
+          else if (seconds <= 10) color = ChatColor.GOLD;
+          else color = ChatColor.YELLOW;
+  
+          if (this.countdownChatEnabled) {
+              player.sendMessage(colorize("&c[!] " + color + "Kick in " + seconds + "s "
+                      + "&7(Ping: &c" + ping + "ms&7)"));
+          }
+  
+          if (this.countdownSoundEnabled && seconds <= 3) {
+              playSound(player, this.countdownSoundName, 1.0F, 1.5F);
+          }
+      }
+  
+      private void kickPlayer(Player player, int ping) {
+          if (this.kickTitleEnabled) {
+              sendTitle(player,
+                      this.kickTitle.replace("%ping%", String.valueOf(ping))
+                              .replace("%max%", String.valueOf(this.pingThreshold)),
+                      this.kickSubtitle.replace("%ping%", String.valueOf(ping))
+                              .replace("%max%", String.valueOf(this.pingThreshold)));
+          }
+  
+          if (this.kickSoundEnabled) {
+              playSound(player, this.kickSoundName, 1.0F, 1.0F);
+          }
+  
+          String reason = this.msgKick
+                  .replace("%ping%", String.valueOf(ping))
+                  .replace("%max%", String.valueOf(this.pingThreshold))
+                  .replace("%player%", player.getName());
+  
+          if (this.broadcastKicks) {
+              String broadcast = this.msgBroadcast
+                      .replace("%player%", player.getName())
+                      .replace("%ping%", String.valueOf(ping))
+                      .replace("%max%", String.valueOf(this.pingThreshold));
+              Bukkit.broadcastMessage(colorize(broadcast));
+          }
+  
+          if (this.logKicks) {
+              this.plugin.getLogger().info("Kicked " + player.getName()
+                      + " for unstable connection (" + ping + "ms / "
+                      + this.pingThreshold + "ms)");
+          }
+  
+          player.kickPlayer(colorize(reason));
+      }
+  
+      public int getEffectivePing(Player player) {
+          UUID id = player.getUniqueId();
+          if (this.forcedPing.containsKey(id)) {
+              return this.forcedPing.get(id).intValue();
+          }
+          return PingUtil.getPing(player);
+      }
+  
+      @SuppressWarnings({"unchecked", "rawtypes"})
+      private void sendTitle(Player player, String title, String subtitle) {
+          String t = colorize(title);
+          String s = colorize(subtitle);
+  
+          try {
+              player.getClass().getMethod("sendTitle", String.class, String.class)
+                      .invoke(player, t, s);
+              return;
+          } catch (Throwable ignored) {}
+  
+          try {
+              String packageName = Bukkit.getServer().getClass().getPackage().getName();
+              String nms = packageName.substring(packageName.lastIndexOf('.') + 1);
+  
+              Class<?> craftPlayerClass = Class.forName("org.bukkit.craftbukkit." + nms + ".entity.CraftPlayer");
+              Object craftPlayer = craftPlayerClass.cast(player);
+              Object entityPlayer = craftPlayerClass.getMethod("getHandle").invoke(craftPlayer);
+              Object playerConnection = entityPlayer.getClass().getField("playerConnection").get(entityPlayer);
+  
+              Class<?> chatComponentClass = Class.forName("net.minecraft.server." + nms + ".ChatComponentText");
+              Object titleComponent = chatComponentClass.getConstructor(String.class).newInstance(t);
+              Object subtitleComponent = chatComponentClass.getConstructor(String.class).newInstance(s);
+  
+              Class<?> packetTitleClass = Class.forName("net.minecraft.server." + nms + ".PacketPlayOutTitle");
+              Class<?> enumTitleActionClass = Class.forName("net.minecraft.server." + nms + ".PacketPlayOutTitle$EnumTitleAction");
+  
+              Object actionTitle = Enum.valueOf((Class<Enum>) enumTitleActionClass, "TITLE");
+              Object actionSubtitle = Enum.valueOf((Class<Enum>) enumTitleActionClass, "SUBTITLE");
+  
+              java.lang.reflect.Constructor<?> ctor = packetTitleClass.getConstructor(enumTitleActionClass, chatComponentClass);
+              Object packetTitle = ctor.newInstance(actionTitle, titleComponent);
+              Object packetSubtitle = ctor.newInstance(actionSubtitle, subtitleComponent);
+  
+              Class<?> packetClass = Class.forName("net.minecraft.server." + nms + ".Packet");
+              java.lang.reflect.Method sendPacket = playerConnection.getClass().getMethod("sendPacket", packetClass);
+  
+              sendPacket.invoke(playerConnection, packetTitle);
+              sendPacket.invoke(playerConnection, packetSubtitle);
+  
+              java.lang.reflect.Constructor<?> timingCtor = packetTitleClass.getConstructor(int.class, int.class, int.class);
+              Object packetTiming = timingCtor.newInstance(Integer.valueOf(0), Integer.valueOf(40), Integer.valueOf(0));
+              sendPacket.invoke(playerConnection, packetTiming);
+          } catch (Throwable ignored) {
+              if (this.warnChatEnabled) {
+                  player.sendMessage(t);
+              }
+          }
+      }
+  
+      @SuppressWarnings("deprecation")
+      private void playSound(Player player, String soundName, float volume, float pitch) {
+          if (soundName == null || soundName.isEmpty()) return;
+          try {
+              Sound sound = Sound.valueOf(soundName.toUpperCase());
+              player.playSound(player.getLocation(), sound, volume, pitch);
+          } catch (Throwable ignored) {}
+      }
+  
+      @EventHandler(priority = EventPriority.MONITOR)
+      public void onJoin(PlayerJoinEvent event) {
+          this.highPingSince.remove(event.getPlayer().getUniqueId());
+          this.lastWarnTime.remove(event.getPlayer().getUniqueId());
+      }
+  
+      @EventHandler(priority = EventPriority.MONITOR)
+      public void onQuit(PlayerQuitEvent event) {
+          UUID id = event.getPlayer().getUniqueId();
+          this.highPingSince.remove(id);
+          this.lastWarnTime.remove(id);
+      }
+  
+      // ============================================================
+      //  GETTERS / SETTERS
+      // ============================================================
+      public boolean isEnabled() { return this.enabled; }
+  
+      public void setEnabled(boolean value) {
+          this.enabled = value;
+          this.plugin.getConfig().set("enabled", Boolean.valueOf(value));
+          this.plugin.saveConfig();
+          if (!value) {
+              this.highPingSince.clear();
+              this.lastWarnTime.clear();
+          }
+      }
+  
+      public int getPingThreshold() { return this.pingThreshold; }
+  
+      public void setPingThreshold(int value) {
+          this.pingThreshold = value;
+          this.plugin.getConfig().set("ping", Integer.valueOf(value));
+          this.plugin.saveConfig();
+      }
+  
+      public int getGraceSeconds() { return this.graceSeconds; }
+  
+      public void setGraceSeconds(int value) {
+          this.graceSeconds = value;
+          this.plugin.getConfig().set("grace-seconds", Integer.valueOf(value));
+          this.plugin.saveConfig();
+      }
+  
+      public int getCheckInterval() { return this.checkInterval; }
+  
+      public void setCheckInterval(int value) {
+          this.checkInterval = value;
+          this.plugin.getConfig().set("check-interval", Integer.valueOf(value));
+          this.plugin.saveConfig();
+          restartTask();
+      }
+  
+      public String getPrefix() { return this.prefix; }
+      public String getMsgNoPerm() { return this.msgNoPerm; }
+      public String getMsgReloaded() { return this.msgReloaded; }
+      public String getMsgEnabled() { return this.msgEnabled; }
+      public String getMsgDisabled() { return this.msgDisabled; }
+      public String getMsgBypassAdded() { return this.msgBypassAdded; }
+      public String getMsgBypassRemoved() { return this.msgBypassRemoved; }
+      public String getMsgForcedPingSet() { return this.msgForcedPingSet; }
+      public String getMsgForcedPingCleared() { return this.msgForcedPingCleared; }
+      public String getMsgPlayerNotFound() { return this.msgPlayerNotFound; }
+      public String getMsgPingSelf() { return this.msgPingSelf; }
+      public String getMsgPingOther() { return this.msgPingOther; }
+      public String getMsgPingSet() { return this.msgPingSet; }
+      public String getMsgGraceSet() { return this.msgGraceSet; }
+      public String getMsgIntervalSet() { return this.msgIntervalSet; }
+      public String getMsgUsage() { return this.msgUsage; }
+  
+      public Set<UUID> getBypassPlayers() { return this.bypassPlayers; }
+  
+      public void addBypass(UUID uuid) { this.bypassPlayers.add(uuid); }
+      public void removeBypass(UUID uuid) { this.bypassPlayers.remove(uuid); }
+      public boolean hasBypass(UUID uuid) { return this.bypassPlayers.contains(uuid); }
+  
+      public void setForcedPing(UUID uuid, int ping) {
+          this.forcedPing.put(uuid, Integer.valueOf(ping));
+      }
+      public void clearForcedPing(UUID uuid) { this.forcedPing.remove(uuid); }
+      public boolean hasForcedPing(UUID uuid) { return this.forcedPing.containsKey(uuid); }
+      public int getForcedPing(UUID uuid) {
+          if (!this.forcedPing.containsKey(uuid)) return -1;
+          return this.forcedPing.get(uuid).intValue();
+      }
+  
+      public String colorize(String message) {
+          if (message == null) return "";
+          return ChatColor.translateAlternateColorCodes('&', message);
+      }
+  }
+        │               ├── ConnectionCommand.java
+  package org.vansama.connectionguard;
+  
+  import java.util.ArrayList;
+  import java.util.List;
+  import java.util.UUID;
+  import org.bukkit.Bukkit;
+  import org.bukkit.ChatColor;
+  import org.bukkit.command.Command;
+  import org.bukkit.command.CommandExecutor;
+  import org.bukkit.command.CommandSender;
+  import org.bukkit.entity.Player;
+  
+  public class ConnectionCommand implements CommandExecutor {
+  
+      private final ConnectionGuard plugin;
+      private final Connection connection;
+  
+      public ConnectionCommand(ConnectionGuard plugin, Connection connection) {
+          this.plugin = plugin;
+          this.connection = connection;
+      }
+  
+      @Override
+      public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+          if (args.length == 0) {
+              sendHelp(sender);
+              return true;
+          }
+  
+          String sub = args[0].toLowerCase();
+  
+          // ---------- HELP ----------
+          if (sub.equals("help") || sub.equals("?")) {
+              sendHelp(sender);
+              return true;
+          }
+  
+          // ---------- CREATOR ----------
+          if (sub.equals("creator") || sub.equals("author")) {
+              if (!sender.hasPermission("connectionguard.creator")) {
+                  noPerm(sender); return true;
+              }
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              sender.sendMessage(colorize("&6&lConnectionGuard"));
+              sender.sendMessage(colorize("&7Plugin: &fUnstable Connection / Ping Guard"));
+              sender.sendMessage(colorize("&7Author: &bmuvixo"));
+              sender.sendMessage(colorize("&7Version: &f" + plugin.getDescription().getVersion()));
+              sender.sendMessage(colorize("&7API: &f1.8 - 1.16"));
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              return true;
+          }
+  
+          // ---------- STATUS ----------
+          if (sub.equals("status") || sub.equals("info")) {
+              if (!sender.hasPermission("connectionguard.admin")) {
+                  noPerm(sender); return true;
+              }
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              sender.sendMessage(colorize("&6&lConnectionGuard Status"));
+              sender.sendMessage(colorize("&7Enabled: " + (connection.isEnabled() ? "&aYES" : "&cNO")));
+              sender.sendMessage(colorize("&7Ping threshold: &e" + connection.getPingThreshold() + "ms"));
+              sender.sendMessage(colorize("&7Grace period: &e" + connection.getGraceSeconds() + "s"));
+              sender.sendMessage(colorize("&7Check interval: &e" + connection.getCheckInterval() + " ticks"));
+              sender.sendMessage(colorize("&7Bypassed: &e" + connection.getBypassPlayers().size()));
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              return true;
+          }
+  
+          // ---------- ON / OFF / TOGGLE ----------
+          if (sub.equals("on")) {
+              if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+              connection.setEnabled(true);
+              sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgEnabled()));
+              return true;
+          }
+          if (sub.equals("off")) {
+              if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+              connection.setEnabled(false);
+              sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgDisabled()));
+              return true;
+          }
+          if (sub.equals("toggle")) {
+              if (!sender.hasPermission("connectionguard.toggle")) { noPerm(sender); return true; }
+              boolean state = !connection.isEnabled();
+              connection.setEnabled(state);
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + (state ? connection.getMsgEnabled() : connection.getMsgDisabled())));
+              return true;
+          }
+  
+          // ---------- RELOAD ----------
+          if (sub.equals("reload")) {
+              if (!sender.hasPermission("connectionguard.reload")) { noPerm(sender); return true; }
+              plugin.reload();
+              sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgReloaded()));
+              return true;
+          }
+  
+          // ---------- PING ----------
+          if (sub.equals("ping")) {
+              if (!sender.hasPermission("connectionguard.check")) { noPerm(sender); return true; }
+  
+              if (args.length < 2) {
+                  if (!(sender instanceof Player)) {
+                      sender.sendMessage(colorize("&cConsole must specify a player: /cg ping <player>"));
+                      return true;
+                  }
+                  Player p = (Player) sender;
+                  int ping = connection.getEffectivePing(p);
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPingSelf().replace("%ping%", String.valueOf(ping))));
+                  return true;
+              }
+  
+              Player target = Bukkit.getPlayer(args[1]);
+              if (target == null) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPlayerNotFound().replace("%player%", args[1])));
+                  return true;
+              }
+              int ping = connection.getEffectivePing(target);
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + connection.getMsgPingOther()
+                          .replace("%player%", target.getName())
+                          .replace("%ping%", String.valueOf(ping))));
+              return true;
+          }
+  
+          // ---------- SET ----------
+          if (sub.equals("set")) {
+              if (!sender.hasPermission("connectionguard.set")) { noPerm(sender); return true; }
+              if (args.length < 3) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgUsage().replace("%usage%", "/cg set <ping|grace|interval> <value>")));
+                  return true;
+              }
+              String key = args[1].toLowerCase();
+              int value;
+              try {
+                  value = Integer.parseInt(args[2]);
+              } catch (NumberFormatException e) {
+                  sender.sendMessage(colorize("&cInvalid number: &e" + args[2]));
+                  return true;
+              }
+  
+              if (key.equals("ping")) {
+                  connection.setPingThreshold(value);
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPingSet().replace("%ping%", String.valueOf(value))));
+              } else if (key.equals("grace") || key.equals("grace-seconds")) {
+                  connection.setGraceSeconds(value);
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgGraceSet().replace("%seconds%", String.valueOf(value))));
+              } else if (key.equals("interval") || key.equals("check-interval")) {
+                  connection.setCheckInterval(value);
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgIntervalSet().replace("%ticks%", String.valueOf(value))));
+              } else {
+                  sender.sendMessage(colorize("&cUnknown key: &e" + key
+                          + " &7(use: ping, grace, interval)"));
+              }
+              return true;
+          }
+  
+          // ---------- BYPASS ----------
+          if (sub.equals("bypass")) {
+              if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+              if (args.length < 2) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgUsage().replace("%usage%", "/cg bypass <player>")));
+                  return true;
+              }
+              Player target = Bukkit.getPlayer(args[1]);
+              if (target == null) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPlayerNotFound().replace("%player%", args[1])));
+                  return true;
+              }
+              connection.addBypass(target.getUniqueId());
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + connection.getMsgBypassAdded().replace("%player%", target.getName())));
+              return true;
+          }
+  
+          if (sub.equals("unbypass")) {
+              if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+              if (args.length < 2) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgUsage().replace("%usage%", "/cg unbypass <player>")));
+                  return true;
+              }
+              Player target = Bukkit.getPlayer(args[1]);
+              if (target == null) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPlayerNotFound().replace("%player%", args[1])));
+                  return true;
+              }
+              connection.removeBypass(target.getUniqueId());
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + connection.getMsgBypassRemoved().replace("%player%", target.getName())));
+              return true;
+          }
+  
+          // ---------- LIST ----------
+          if (sub.equals("list")) {
+              if (!sender.hasPermission("connectionguard.admin")) { noPerm(sender); return true; }
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              sender.sendMessage(colorize("&6&lBypassed Players"));
+              if (connection.getBypassPlayers().isEmpty()) {
+                  sender.sendMessage(colorize("&7None."));
+              } else {
+                  for (UUID id : connection.getBypassPlayers()) {
+                      Player p = Bukkit.getPlayer(id);
+                      String name = (p != null) ? p.getName() : id.toString();
+                      sender.sendMessage(colorize("&7- &e" + name));
+                  }
+              }
+              sender.sendMessage(colorize("&8&m----------------------------------"));
+              return true;
+          }
+  
+          // ---------- FORCEPING ----------
+          if (sub.equals("forceping")) {
+              if (!sender.hasPermission("connectionguard.forceping")) { noPerm(sender); return true; }
+              if (args.length < 3) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgUsage().replace("%usage%", "/cg forceping <player> <ms>")));
+                  return true;
+              }
+              Player target = Bukkit.getPlayer(args[1]);
+              if (target == null) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPlayerNotFound().replace("%player%", args[1])));
+                  return true;
+              }
+              int pingAmount;
+              try {
+                  pingAmount = Integer.parseInt(args[2]);
+              } catch (NumberFormatException e) {
+                  sender.sendMessage(colorize("&cInvalid ping: &e" + args[2]));
+                  return true;
+              }
+              if (pingAmount < 0) {
+                  sender.sendMessage(colorize("&cPing cannot be negative."));
+                  return true;
+              }
+              int realPing = PingUtil.getPing(target);
+              if (pingAmount <= realPing) {
+                  sender.sendMessage(colorize("&cForced ping must be higher than current (&e"
+                          + realPing + "ms&c)."));
+                  return true;
+              }
+              connection.setForcedPing(target.getUniqueId(), pingAmount);
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + connection.getMsgForcedPingSet()
+                          .replace("%player%", target.getName())
+                          .replace("%ping%", String.valueOf(pingAmount))));
+              return true;
+          }
+  
+          if (sub.equals("clearping")) {
+              if (!sender.hasPermission("connectionguard.forceping")) { noPerm(sender); return true; }
+              if (args.length < 2) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgUsage().replace("%usage%", "/cg clearping <player>")));
+                  return true;
+              }
+              Player target = Bukkit.getPlayer(args[1]);
+              if (target == null) {
+                  sender.sendMessage(colorize(connection.getPrefix()
+                          + connection.getMsgPlayerNotFound().replace("%player%", args[1])));
+                  return true;
+              }
+              connection.clearForcedPing(target.getUniqueId());
+              connection.removeBypass(target.getUniqueId());
+              sender.sendMessage(colorize(connection.getPrefix()
+                      + connection.getMsgForcedPingCleared().replace("%player%", target.getName())));
+              return true;
+          }
+  
+          // ---------- UNKNOWN ----------
+          sender.sendMessage(colorize("&cUnknown subcommand. Use &e/cg help"));
+          return true;
+      }
+  
+      private void noPerm(CommandSender sender) {
+          sender.sendMessage(colorize(connection.getPrefix() + connection.getMsgNoPerm()));
+      }
+  
+      private void sendHelp(CommandSender sender) {
+          sender.sendMessage(colorize("&8&m----------------------------------"));
+          sender.sendMessage(colorize("&6&lConnectionGuard &7- Commands"));
+          sender.sendMessage(colorize("&8&m----------------------------------"));
+  
+          sender.sendMessage(colorize("&e/cg help &7- Show this help"));
+          sender.sendMessage(colorize("&e/cg creator &7- Show plugin credits"));
+          sender.sendMessage(colorize("&e/cg ping [player] &7- Show ping"));
+  
+          if (sender.hasPermission("connectionguard.toggle")) {
+              sender.sendMessage(colorize("&e/cg on|off|toggle &7- Toggle the checker"));
+          }
+          if (sender.hasPermission("connectionguard.admin")) {
+              sender.sendMessage(colorize("&e/cg status &7- Show plugin status"));
+              sender.sendMessage(colorize("&e/cg bypass <player> &7- Add bypass"));
+              sender.sendMessage(colorize("&e/cg unbypass <player> &7- Remove bypass"));
+              sender.sendMessage(colorize("&e/cg list &7- List bypassed players"));
+          }
+          if (sender.hasPermission("connectionguard.forceping")) {
+              sender.sendMessage(colorize("&e/cg forceping <player> <ms> &7- Force a ping"));
+              sender.sendMessage(colorize("&e/cg clearping <player> &7- Remove forced ping"));
+          }
+          if (sender.hasPermission("connectionguard.set")) {
+              sender.sendMessage(colorize("&e/cg set ping <ms> &7- Change ping threshold"));
+              sender.sendMessage(colorize("&e/cg set grace <sec> &7- Change grace period"));
+              sender.sendMessage(colorize("&e/cg set interval <ticks> &7- Change check interval"));
+          }
+          if (sender.hasPermission("connectionguard.reload")) {
+              sender.sendMessage(colorize("&e/cg reload &7- Reload configuration"));
+          }
+  
+          sender.sendMessage(colorize("&8&m----------------------------------"));
+      }
+  
+      private String colorize(String s) {
+          return ChatColor.translateAlternateColorCodes('&', s);
+      }
+  
+      public List<String> tabComplete(String[] args) {
+          List<String> out = new ArrayList<String>();
+          if (args.length == 1) {
+              String[] subs = {"help","creator","ping","on","off","toggle","status",
+                      "bypass","unbypass","list","forceping","clearping","set","reload"};
+              String prefix = args[0].toLowerCase();
+              for (String s : subs) {
+                  if (s.startsWith(prefix)) out.add(s);
+              }
+          } else if (args.length == 2) {
+              String sub = args[0].toLowerCase();
+              if (sub.equals("ping") || sub.equals("bypass") || sub.equals("unbypass")
+                      || sub.equals("forceping") || sub.equals("clearping")) {
+                  for (Player p : Bukkit.getOnlinePlayers()) {
+                      if (p.getName().toLowerCase().startsWith(args[1].toLowerCase())) {
+                          out.add(p.getName());
+                      }
+                  }
+              } else if (sub.equals("set")) {
+                  out.add("ping");
+                  out.add("grace");
+                  out.add("interval");
+              }
+          } else if (args.length == 3) {
+              if (args[0].equalsIgnoreCase("set")) {
+                  out.add("<value>");
+              }
+          }
+          return out;
+      }
+  }
+        │               ├── ConnectionGuard.java
+  package org.vansama.connectionguard;
+  
+  import org.bukkit.Bukkit;
+  import org.bukkit.plugin.java.JavaPlugin;
+  
+  public class ConnectionGuard extends JavaPlugin {
+  
+      private Connection connection;
+  
+      @Override
+      public void onEnable() {
+          saveDefaultConfig();
+          reloadConfig();
+  
+          this.connection = new Connection(this);
+          getServer().getPluginManager().registerEvents(this.connection, this);
+  
+          ConnectionCommand cmd = new ConnectionCommand(this, this.connection);
+          getCommand("connectionguard").setExecutor(cmd);
+          getCommand("connectionguard").setTabCompleter(new ConnectionTabCompleter(this.connection));
+  
+          if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+              try {
+                  new ConnectionGuardExpansion(this, this.connection).register();
+                  getLogger().info("PlaceholderAPI expansion registered.");
+              } catch (Throwable t) {
+                  getLogger().warning("Failed to register PlaceholderAPI expansion: " + t.getMessage());
+              }
+          }
+  
+          printBanner();
+      }
+  
+      @Override
+      public void onDisable() {
+          if (this.connection != null) {
+              this.connection.shutdown();
+          }
+          getLogger().info("ConnectionGuard disabled.");
+      }
+  
+      public void reload() {
+          reloadConfig();
+          if (this.connection != null) {
+              this.connection.reloadConfig();
+          }
+      }
+  
+      public Connection getConnection() {
+          return this.connection;
+      }
+  
+      private void printBanner() {
+          getLogger().info("=================================================");
+          getLogger().info("  ConnectionGuard v" + getDescription().getVersion() + " - Enabled");
+          getLogger().info("  Author: muvixo");
+          getLogger().info("  Ping threshold: " + getConfig().getInt("ping", 150) + "ms");
+          getLogger().info("  Grace period: " + getConfig().getInt("grace-seconds", 30) + "s");
+          getLogger().info("=================================================");
+      }
+  }
+        │               ├── ConnectionGuardExpansion.java
+  package org.vansama.connectionguard;
+  
+  import me.clip.placeholderapi.expansion.PlaceholderExpansion;
+  import org.bukkit.entity.Player;
+  
+  public class ConnectionGuardExpansion extends PlaceholderExpansion {
+  
+      private final ConnectionGuard plugin;
+      private final Connection connection;
+  
+      public ConnectionGuardExpansion(ConnectionGuard plugin, Connection connection) {
+          this.plugin = plugin;
+          this.connection = connection;
+      }
+  
+      @Override public String getIdentifier() { return "connectionguard"; }
+      @Override public String getAuthor()     { return "muvixo"; }
+      @Override public String getVersion()    { return plugin.getDescription().getVersion(); }
+      @Override public boolean persist()      { return true; }
+      @Override public boolean canRegister()  { return true; }
+  
+      @Override
+      public String onPlaceholderRequest(Player player, String identifier) {
+          if (identifier == null) return "";
+          String id = identifier.toLowerCase();
+  
+          if (id.equals("enabled"))     return connection.isEnabled() ? "true" : "false";
+          if (id.equals("threshold"))   return String.valueOf(connection.getPingThreshold());
+          if (id.equals("grace"))       return String.valueOf(connection.getGraceSeconds());
+          if (id.equals("interval"))    return String.valueOf(connection.getCheckInterval());
+          if (id.equals("bypassed"))    return String.valueOf(connection.getBypassPlayers().size());
+  
+          if (player != null) {
+              if (id.equals("ping"))     return String.valueOf(connection.getEffectivePing(player));
+              if (id.equals("realping")) return String.valueOf(PingUtil.getPing(player));
+              if (id.equals("bypass"))   return connection.hasBypass(player.getUniqueId()) ? "true" : "false";
+              if (id.equals("forced"))   return connection.hasForcedPing(player.getUniqueId())
+                      ? String.valueOf(connection.getForcedPing(player.getUniqueId())) : "0";
+          }
+  
+          return null;
+      }
+  }
+        │               ├── ConnectionTabCompleter.java
+  package org.vansama.connectionguard;
+  
+  import java.util.ArrayList;
+  import java.util.List;
+  import org.bukkit.Bukkit;
+  import org.bukkit.command.Command;
+  import org.bukkit.command.CommandSender;
+  import org.bukkit.command.TabCompleter;
+  import org.bukkit.entity.Player;
+  
+  public class ConnectionTabCompleter implements TabCompleter {
+  
+      private final Connection connection;
+  
+      public ConnectionTabCompleter(Connection connection) {
+          this.connection = connection;
+      }
+  
+      @Override
+      public List<String> onTabComplete(CommandSender sender, Command command,
+                                        String alias, String[] args) {
+          List<String> out = new ArrayList<String>();
+  
+          if (args.length == 1) {
+              String[] subs = {"help","creator","ping","on","off","toggle","status",
+                      "bypass","unbypass","list","forceping","clearping","set","reload"};
+              String prefix = args[0].toLowerCase();
+              for (String s : subs) {
+                  if (s.startsWith(prefix)) out.add(s);
+              }
+          } else if (args.length == 2) {
+              String sub = args[0].toLowerCase();
+              if (sub.equals("ping") || sub.equals("bypass") || sub.equals("unbypass")
+                      || sub.equals("forceping") || sub.equals("clearping")) {
+                  for (Player p : Bukkit.getOnlinePlayers()) {
+                      if (p.getName().toLowerCase().startsWith(args[1].toLowerCase())) {
+                          out.add(p.getName());
+                      }
+                  }
+              } else if (sub.equals("set")) {
+                  out.add("ping");
+                  out.add("grace");
+                  out.add("interval");
+              }
+          } else if (args.length == 3) {
+              if (args[0].equalsIgnoreCase("set")) {
+                  out.add("<value>");
+              }
+          }
+          return out;
+      }
+  }
+        │               └── PingUtil.java
+  package org.vansama.connectionguard;
+  
+  import org.bukkit.entity.Player;
+  
+  public final class PingUtil {
+  
+      private PingUtil() {}
+  
+      public static int getPing(Player player) {
+          if (player == null) return 0;
+          try {
+              Object craftPlayer = player.getClass().getMethod("getHandle").invoke(player);
+              return ((Integer) craftPlayer.getClass().getField("ping").get(craftPlayer)).intValue();
+          } catch (Throwable t) {
+              return 0;
+          }
+      }
+  
+      public static double getTps() {
+          try {
+              Object server = org.bukkit.Bukkit.getServer().getClass().getMethod("getServer").invoke(null);
+              java.lang.reflect.Field recentTpsField = server.getClass().getField("recentTps");
+              double[] recentTps = (double[]) recentTpsField.get(server);
+              return recentTps[0];
+          } catch (Throwable t) {
+              return 20.0D;
+          }
+      }
+  }
+        └── resources
+            ├── config.yml
+  name: ConnectionGuard
+  version: '${project.version}'
+  main: org.vansama.connectionguard.ConnectionGuard
+  author: muvixo
+  authors: [muvixo]
+  description: Unstable Connection / Ping Guard - standalone plugin
+  softdepend: [PlaceholderAPI]
+  
+  commands:
+    connectionguard:
+      description: ConnectionGuard main command
+      aliases: [cg, conn, pingguard]
+      usage: /cg help
+      permission: connectionguard.use
+  
+  permissions:
+    connectionguard.*:
+      description: Full access
+      default: op
+      children:
+        connectionguard.use: true
+        connectionguard.admin: true
+        connectionguard.reload: true
+        connectionguard.toggle: true
+        connectionguard.bypass: true
+        connectionguard.check: true
+        connectionguard.creator: true
+        connectionguard.forceping: true
+        connectionguard.set: true
+  
+    connectionguard.use:
+      description: Access to /cg help and /cg ping
+      default: true
+    connectionguard.admin:
+      description: Full admin access
+      default: op
+    connectionguard.reload:
+      description: Reload config
+      default: op
+    connectionguard.toggle:
+      description: Enable/disable the checker
+      default: op
+    connectionguard.bypass:
+      description: Bypass the connection check
+      default: false
+    connectionguard.check:
+      description: Check your own / other players ping
+      default: true
+    connectionguard.creator:
+      description: See plugin credits
+      default: true
+    connectionguard.forceping:
+      description: Force a ping value on a player
+      default: op
+    connectionguard.set:
+      description: Change plugin settings from command
+      default: op
+            └── plugin.yml
+  name: ConnectionGuard
+  version: '${project.version}'
+  main: org.vansama.connectionguard.ConnectionGuard
+  author: muvixo
+  authors: [muvixo]
+  description: Unstable Connection / Ping Guard - standalone plugin
+  api-version: 1.8
+  softdepend: [PlaceholderAPI]
+  
+  commands:
+    connectionguard:
+      description: ConnectionGuard main command
+      aliases: [cg, conn, pingguard]
+      usage: /cg help
+      permission: connectionguard.use
+  
+  permissions:
+    connectionguard.*:
+      description: Full access
+      default: op
+      children:
+        connectionguard.use: true
+        connectionguard.admin: true
+        connectionguard.reload: true
+        connectionguard.toggle: true
+        connectionguard.bypass: true
+        connectionguard.check: true
+        connectionguard.creator: true
+        connectionguard.forceping: true
+        connectionguard.set: true
+  
+    connectionguard.use:
+      description: Access to /cg help and /cg ping
+      default: true
+    connectionguard.admin:
+      description: Full admin access
+      default: op
+    connectionguard.reload:
+      description: Reload config
+      default: op
+    connectionguard.toggle:
+      description: Enable/disable the checker
+      default: op
+    connectionguard.bypass:
+      description: Bypass the connection check
+      default: false
+    connectionguard.check:
+      description: Check your own / other players ping
+      default: true
+    connectionguard.creator:
+      description: See plugin credits
+      default: true
+    connectionguard.forceping:
+      description: Force a ping value on a player
+      default: op
+    connectionguard.set:
+      description: Change plugin settings from command
+      default: op
